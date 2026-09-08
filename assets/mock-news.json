@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "title": "Governo Federal anuncia novo plano de modernização e digitalização dos serviços públicos",
+    "category": "GESTÃO PÚBLICA",
+    "categoryColor": "#3b82f6",
+    "summary": "Iniciativa prevê integração de sistemas administrativos e desburocratização de processos internos, reduzindo prazos de tramitação em até 40% em todo o país.",
+    "source": "Agência Brasil",
+    "time": "Há 18 minutos",
+    "image": "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80"
+  },
+  {
+    "id": 2,
+    "title": "Banco Central projeta crescimento sustentado e estabilidade na taxa de inflação para o trimestre",
+    "category": "ECONOMIA",
+    "categoryColor": "#10b981",
+    "summary": "Boletim Focus aponta melhora nos indicadores fiscais e aumento de investimentos em infraestrutura e inovação no mercado nacional.",
+    "source": "G1 Economia",
+    "time": "Há 35 minutos",
+    "image": "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=1200&q=80"
+  },
+  {
+    "id": 3,
+    "title": "Programa de capacitação em tecnologia abre 50 mil vagas gratuitas para servidores públicos e cidadãos",
+    "category": "EDUCAÇÃO & TECNOLOGIA",
+    "categoryColor": "#8b5cf6",
+    "summary": "Cursos abrangem inteligência artificial aplicada, segurança da informação e gestão ágil de projetos no setor governamental.",
+    "source": "Ministério da Gestão",
+    "time": "Há 1 hora",
+    "image": "https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1200&q=80"
+  },
+  {
+    "id": 4,
+    "title": "Investimentos em energia solar e eólica no Brasil batem recorde histórico no primeiro semestre",
+    "category": "SUSTENTABILIDADE",
+    "categoryColor": "#f59e0b",
+    "summary": "Capacidade instalada supera expectativas e consolida o país entre os líderes mundiais na transição para matriz energética limpa.",
+    "source": "CNN Brasil",
+    "time": "Há 2 horas",
+    "image": "https://images.unsplash.com/photo-1509391365360-2e959784a276?auto=format&fit=crop&w=1200&q=80"
+  },
+  {
+    "id": 5,
+    "title": "Novo marco regulatório agiliza processos de compras públicas e parcerias com municípios",
+    "category": "LEGISLAÇÃO & NORMAS",
+    "categoryColor": "#06b6d4",
+    "summary": "Novas diretrizes simplificam chamamentos públicos e reforçam mecanismos de auditoria e transparência orçamentária.",
+    "source": "Diário Oficial da União",
+    "time": "Há 3 horas",
+    "image": "https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80"
+  }
+]

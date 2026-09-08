@@ -1,0 +1,1187 @@
+/* ==========================================================================
+   DASHBOARD INSTITUCIONAL - SECRETARIA ADMINISTRATIVA (TV 42")
+   Design System: Executive Institutional Glass
+   Optimized for 16:9 Digital Signage Display (1920x1080 / 4K)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Color Palette */
+  --bg-main: #060b14;
+  --bg-gradient: radial-gradient(circle at 80% 20%, #0d1b33 0%, #060b14 70%),
+                 radial-gradient(circle at 10% 80%, #0a172c 0%, #060b14 60%);
+  
+  --card-bg: rgba(13, 23, 42, 0.75);
+  --card-bg-elevated: rgba(19, 34, 64, 0.85);
+  --card-border: rgba(59, 130, 246, 0.18);
+  --card-border-glow: rgba(56, 189, 248, 0.4);
+  --card-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.6), 
+                 inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+
+  /* Accents */
+  --accent-blue: #38bdf8;
+  --accent-cyan: #06b6d4;
+  --accent-royal: #2563eb;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-purple: #a855f7;
+
+  /* Text Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-highlight: #e0f2fe;
+
+  /* Typography */
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Layout Spacing */
+  --gap-screen: 16px;
+  --border-radius-lg: 20px;
+  --border-radius-md: 14px;
+  --border-radius-sm: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-main);
+  background-image: var(--bg-gradient);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+body.cursor-hidden {
+  cursor: none;
+}
+
+/* Base App Wrapper (16:9 Fit) */
+.tv-app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  padding: 14px 20px 10px 20px;
+  gap: 12px;
+  position: relative;
+}
+
+/* ==========================================================================
+   1. TOP HEADER (Institucional + Relógio + Status)
+   ========================================================================== */
+.app-header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--card-shadow);
+  z-index: 10;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-badge {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #1e3a8a, #0284c7);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(14, 165, 233, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.brand-badge svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.brand-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-department {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-sub {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Header Live Status & Controls */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.system-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 30px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #34d399;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #10b981;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.header-clock-box {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-left: 18px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.clock-time {
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 24px rgba(56, 189, 248, 0.25);
+}
+
+.clock-seconds {
+  font-size: 1.25rem;
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.clock-date-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.clock-weekday {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  letter-spacing: 0.05em;
+}
+
+.clock-calendar {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.header-tool-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header-tool-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  color: #ffffff;
+  border-color: var(--accent-blue);
+}
+
+/* ==========================================================================
+   2. MAIN SPLIT GRID (DIVISÃO EM 3 PARTES: 50% ESQ | 50% DIR (DIV. EM 2))
+   ========================================================================== */
+.main-dashboard-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Metade Esquerda (50%) e Metade Direita (50%) */
+  gap: var(--gap-screen);
+  min-height: 0; /* Previne overflow fora da tela */
+}
+
+/* Painéis Base */
+.dashboard-panel {
+  background: var(--card-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.panel-header {
+  padding: 16px 22px 12px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panel-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-icon-pill {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--accent-blue);
+}
+
+.panel-icon-pill svg {
+  width: 18px;
+  height: 18px;
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.panel-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--accent-blue);
+}
+
+/* ==========================================================================
+   PARTE 1: METADE ESQUERDA (ÚLTIMAS NOTÍCIAS DO BRASIL - 100% ALTURA)
+   ========================================================================== */
+.left-news-panel {
+  grid-column: 1 / 2;
+  height: 100%;
+}
+
+.news-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* Card Principal em Destaque */
+.featured-news-card {
+  flex: 1;
+  position: relative;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background-color: #0c1626;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+.news-image-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 12s ease-out;
+}
+
+.featured-news-card:hover .news-image-bg {
+  transform: scale(1.05);
+}
+
+.news-image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    rgba(6, 11, 20, 0.15) 0%,
+    rgba(6, 11, 20, 0.6) 45%,
+    rgba(6, 11, 20, 0.95) 90%,
+    rgba(6, 11, 20, 1) 100%
+  );
+}
+
+.featured-news-body {
+  position: relative;
+  z-index: 2;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.news-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.news-category-badge {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: var(--accent-blue);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
+}
+
+.news-timestamp {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.featured-news-title {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.featured-news-summary {
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 400;
+}
+
+/* Indicador de Rotação Automática */
+.news-timer-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.news-timer-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+  border-radius: 2px;
+  box-shadow: 0 0 10px var(--accent-blue);
+}
+
+/* Mini lista de próximas manchetes */
+.upcoming-news-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  height: 120px;
+}
+
+.upcoming-news-item {
+  background: rgba(18, 30, 56, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--border-radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.upcoming-news-item.active {
+  border-color: var(--accent-blue);
+  background: rgba(30, 58, 107, 0.6);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+}
+
+.upcoming-item-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-blue);
+  text-transform: uppercase;
+}
+
+.upcoming-item-title {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #e2e8f0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   COLUNA DIREITA (DIVIDIDA AO MEIO: PARTE 2 TEMPO + PARTE 3 MURAL)
+   ========================================================================== */
+.right-column-container {
+  grid-column: 2 / 3;
+  display: grid;
+  grid-template-rows: 1fr 1fr; /* Dividida ao meio uma vez mais */
+  gap: var(--gap-screen);
+  height: 100%;
+}
+
+/* ==========================================================================
+   PARTE 2: METADE DIREITA SUPERIOR (PREVISÃO DO TEMPO COMPLETA)
+   ========================================================================== */
+.weather-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px;
+  justify-content: space-between;
+  min-height: 0;
+}
+
+.weather-current-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.weather-primary-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-location-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-blue);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.weather-location-pill svg {
+  width: 16px;
+  height: 16px;
+}
+
+.weather-temp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.weather-giant-temp {
+  font-family: var(--font-display);
+  font-size: 4rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: -0.05em;
+  text-shadow: 0 0 30px rgba(56, 189, 248, 0.3);
+}
+
+.weather-temp-degree {
+  font-size: 2.2rem;
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+.weather-condition-text {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.weather-sensation {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.weather-main-icon-container {
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.4));
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.weather-main-icon-container svg {
+  width: 90px;
+  height: 90px;
+}
+
+/* Indicadores climáticos em pills */
+.weather-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.weather-metric-item {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.metric-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-blue);
+}
+
+.metric-icon-wrap svg {
+  width: 15px;
+  height: 15px;
+}
+
+.metric-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Previsão dos Próximos Dias */
+.weather-forecast-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.forecast-day-card {
+  background: rgba(14, 25, 48, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.forecast-day-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-transform: uppercase;
+}
+
+.forecast-icon-mini {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forecast-icon-mini svg {
+  width: 22px;
+  height: 22px;
+}
+
+.forecast-temp-range {
+  display: flex;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.temp-max {
+  color: #f8fafc;
+}
+
+.temp-min {
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   PARTE 3: METADE DIREITA INFERIOR (ESCOLHA: MURAL DA SECRETARIA ADMINISTRATIVA)
+   ========================================================================== */
+.secretary-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-nav-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.tab-nav-btn {
+  background: transparent;
+  border: none;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-nav-btn.active {
+  background: var(--accent-royal);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+}
+
+.secretary-content-wrapper {
+  flex: 1;
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Tab 1: Quadro de Comunicados */
+.tab-view {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  animation: fadeIn 0.4s ease;
+}
+
+.tab-view.active {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.notice-card {
+  background: rgba(18, 30, 56, 0.65);
+  border-left: 4px solid var(--accent-blue);
+  border-radius: var(--border-radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+
+.notice-card.urgent {
+  border-left-color: var(--accent-rose);
+  background: rgba(69, 15, 30, 0.3);
+}
+
+.notice-card.warning {
+  border-left-color: var(--accent-amber);
+  background: rgba(69, 45, 15, 0.25);
+}
+
+.notice-card.info {
+  border-left-color: var(--accent-cyan);
+  background: rgba(15, 45, 69, 0.25);
+}
+
+.notice-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notice-badge {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.notice-badge.urgent {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.notice-badge.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.notice-badge.info {
+  background: rgba(6, 182, 212, 0.2);
+  color: #67e8f9;
+  border: 1px solid rgba(6, 182, 212, 0.4);
+}
+
+.notice-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.notice-title {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.notice-text {
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Tab 2: Agenda do Dia */
+.agenda-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.agenda-item {
+  display: flex;
+  align-items: center;
+  background: rgba(18, 30, 56, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 14px;
+  gap: 14px;
+}
+
+.agenda-time-pill {
+  min-width: 75px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.agenda-time-text {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-blue);
+}
+
+.agenda-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agenda-title {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.agenda-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agenda-status-badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.status-ongoing {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.status-upcoming {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+/* Tab 3: Ramais e Expediente */
+.directory-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.directory-item {
+  background: rgba(18, 30, 56, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.directory-sector {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.directory-ext {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  background: rgba(6, 182, 212, 0.12);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+/* ==========================================================================
+   3. BOTTOM TICKER (LETREIRO DE NOTÍCIAS E COMUNICADOS DESLIZANTE)
+   ========================================================================== */
+.bottom-ticker-bar {
+  height: 44px;
+  background: var(--card-bg-elevated);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+}
+
+.ticker-label-badge {
+  height: 100%;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #b91c1c, #dc2626);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  box-shadow: 4px 0 14px rgba(220, 38, 38, 0.4);
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.ticker-track-container {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-content-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 40px;
+  animation: tickerScroll 45s linear infinite;
+}
+
+.ticker-content-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes tickerScroll {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-news-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.ticker-bullet {
+  color: var(--accent-amber);
+  font-size: 1.1rem;
+}
+
+/* ==========================================================================
+   4. MODAL DE GESTÃO / ADMINISTRAÇÃO RÁPIDA (TECLA 'E' OU BOTÃO)
+   ========================================================================== */
+.admin-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.admin-modal-backdrop.open {
+  display: flex;
+}
+
+.admin-modal-box {
+  background: #0f172a;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8);
+  border-radius: var(--border-radius-lg);
+  width: 750px;
+  max-width: 90vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 14px;
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.modal-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.admin-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.admin-input, .admin-select, .admin-textarea {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+
+.admin-input:focus, .admin-textarea:focus, .admin-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.admin-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.btn-primary {
+  background: var(--accent-royal);
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+}

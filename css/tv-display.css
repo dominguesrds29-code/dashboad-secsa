@@ -1,0 +1,127 @@
+/* ==========================================================================
+   TV DISPLAY ENHANCEMENTS & KIOSK / DIGITAL SIGNAGE RULES
+   ========================================================================== */
+
+/* Garantia de GPU acceleration e anti-flicker */
+.left-news-panel,
+.weather-panel,
+.secretary-panel,
+.featured-news-card,
+.bottom-ticker-bar {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+/* Ocultação de barras de rolagem nativas na tela da TV */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.6);
+}
+
+/* Efeito Glow Pulsante para Notícias Urgentes e Alertas */
+.alert-glow {
+  animation: redGlowPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes redGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.7);
+  }
+}
+
+/* Efeito de Vidro e Borda Dinâmica */
+.glow-border-hover {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glow-border-hover:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+}
+
+/* Transições de Fade para Carrossel de Notícias */
+.news-fade-in {
+  animation: newsEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes newsEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Animações de Ícones de Clima em SVG */
+.sun-spin {
+  transform-origin: center;
+  animation: spinSlow 30s linear infinite;
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cloud-drift {
+  animation: drift 6s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  from { transform: translateX(-3px); }
+  to { transform: translateX(3px); }
+}
+
+.rain-drop {
+  animation: rainFall 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes rainFall {
+  0% { opacity: 0; transform: translateY(-5px); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(12px); }
+}
+
+/* Ajustes finos para telas menores (responsividade se aberto em laptop de suporte) */
+@media (max-width: 1200px) {
+  .main-dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow-y: auto;
+  }
+  
+  .tv-app-container {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+  
+  .left-news-panel {
+    min-height: 500px;
+  }
+  
+  .right-column-container {
+    grid-template-rows: auto auto;
+    gap: 16px;
+  }
+}

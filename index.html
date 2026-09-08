@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Institucional - Secretaria Administrativa</title>
+  <meta name="description" content="Dashboard digital signage em alta definição para TV de 42 polegadas: Notícias do Brasil em tempo real, Previsão do Tempo e Mural da Secretaria Administrativa.">
+  
+  <!-- Estilos e Design System -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/tv-display.css">
+</head>
+<body>
+
+  <div class="tv-app-container">
+    
+    <!-- ====================================================================
+         CABEÇALHO EXECUTIVO (IDENTIFICAÇÃO + RELÓGIO DIGITAL + STATUS)
+         ==================================================================== -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-badge">
+          <!-- Brasão Institucional SVG -->
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" />
+            <path d="M12 7v10" />
+            <path d="M8 11h8" />
+          </svg>
+        </div>
+        <div class="brand-titles">
+          <h1 class="brand-department" id="brand-department-name">SECRETARIA DE ADMINISTRAÇÃO & GESTÃO</h1>
+          <span class="brand-sub">SISTEMA INTEGRADO DE INFORMAÇÕES & COMUNICAÇÃO INSTITUCIONAL</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Indicador de Sistema Ativo -->
+        <div class="system-status-indicator">
+          <span class="pulse-dot"></span>
+          <span>ONLINE • 24/7</span>
+        </div>
+
+        <!-- Relógio Digital Grande com Data Completa -->
+        <div class="header-clock-box">
+          <div class="clock-time">
+            <span id="clock-main-time">12:00</span><span id="clock-seconds" class="clock-seconds">:00</span>
+          </div>
+          <div class="clock-date-group">
+            <span id="clock-weekday" class="clock-weekday">Terça-feira</span>
+            <span id="clock-calendar" class="clock-calendar">01 de Setembro de 2026</span>
+          </div>
+        </div>
+
+        <!-- Botões de Controle Rápido -->
+        <button id="open-admin-btn" class="header-tool-btn" title="Painel de Edição (Tecla E)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+
+        <button id="btn-toggle-fullscreen" class="header-tool-btn" title="Tela Cheia (Tecla F ou F11)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ====================================================================
+         GRID PRINCIPAL (DIVIDIDO EM 3 PARTES: 50% ESQ | 50% DIR DIV. EM 2)
+         ==================================================================== -->
+    <main class="main-dashboard-grid">
+
+      <!-- ================================================================
+           PARTE 1: METADE ESQUERDA (100% ALTURA) - NOTÍCIAS DO BRASIL
+           ================================================================ -->
+      <section class="dashboard-panel left-news-panel">
+        <div class="panel-header">
+          <div class="panel-title-wrap">
+            <div class="panel-icon-pill">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path>
+                <path d="M18 14h-8"></path>
+                <path d="M15 18h-5"></path>
+                <path d="M10 6h8v4h-8V6Z"></path>
+              </svg>
+            </div>
+            <h2 class="panel-title">ÚLTIMAS NOTÍCIAS DO BRASIL</h2>
+          </div>
+          <span class="panel-tag">TEMPO REAL</span>
+        </div>
+
+        <div class="news-content-wrapper">
+          <!-- Card de Notícia em Destaque -->
+          <article class="featured-news-card" id="featured-news-card">
+            <img id="news-image-bg" class="news-image-bg" src="" alt="Notícia">
+            <div class="news-image-overlay"></div>
+
+            <div class="featured-news-body">
+              <div class="news-meta-row">
+                <span id="news-category-badge" class="news-category-badge">BRASIL</span>
+                <span class="news-timestamp">
+                  <span id="news-source-elem">Agência Brasil</span> • 
+                  <span id="news-time-elem">Agora</span>
+                </span>
+              </div>
+              <h3 id="news-title-elem" class="featured-news-title">Carregando as principais notícias do país...</h3>
+              <p id="news-summary-elem" class="featured-news-summary">Acompanhe as atualizações mais importantes sobre economia, sociedade, tecnologia e gestão pública nacional.</p>
+              
+              <!-- Barra de Progresso do Slide Atual -->
+              <div class="news-timer-bar">
+                <div id="news-timer-fill" class="news-timer-fill"></div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Próximas 3 Notícias em Miniatura -->
+          <div class="upcoming-news-list" id="upcoming-news-list">
+            <!-- Renderizado dinamicamente via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================
+           COLUNA DIREITA (DIVIDIDA AO MEIO: PARTE 2 TEMPO + PARTE 3 MURAL)
+           ================================================================ -->
+      <div class="right-column-container">
+
+        <!-- ==============================================================
+             PARTE 2: METADE DIREITA SUPERIOR - PREVISÃO DO TEMPO COMPLETA
+             ============================================================== -->
+        <section class="dashboard-panel weather-panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <div class="panel-icon-pill">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+                </svg>
+              </div>
+              <h2 class="panel-title">PREVISÃO METEOROLÓGICA</h2>
+            </div>
+            <span class="panel-tag" id="weather-location-name">Brasília, DF</span>
+          </div>
+
+          <div class="weather-content-wrapper">
+            <!-- Temperatura Atual e Condição -->
+            <div class="weather-current-hero">
+              <div class="weather-primary-info">
+                <div class="weather-location-pill">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <span>TEMPERATURA ATUAL</span>
+                </div>
+                <div class="weather-temp-row">
+                  <div class="weather-giant-temp"><span id="weather-temp-num">--</span><span class="weather-temp-degree">°C</span></div>
+                  <div>
+                    <div id="weather-condition-desc" class="weather-condition-text">Carregando...</div>
+                    <div class="weather-sensation">Sensação de <strong id="weather-sensation-num">--°C</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ícone Animado Grande -->
+              <div class="weather-main-icon-container" id="weather-main-icon">
+                <!-- SVG animado inserido via JS -->
+              </div>
+            </div>
+
+            <!-- 4 Métricas Chave -->
+            <div class="weather-metrics-grid">
+              <div class="weather-metric-item">
+                <div class="metric-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                  </svg>
+                </div>
+                <div class="metric-details">
+                  <span class="metric-label">Umidade</span>
+                  <span class="metric-value" id="weather-metric-humidity">--%</span>
+                </div>
+              </div>
+
+              <div class="weather-metric-item">
+                <div class="metric-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path>
+                  </svg>
+                </div>
+                <div class="metric-details">
+                  <span class="metric-label">Vento</span>
+                  <span class="metric-value" id="weather-metric-wind">-- km/h</span>
+                </div>
+              </div>
+
+              <div class="weather-metric-item">
+                <div class="metric-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 14v6m-4-4v6m-4-4v6"></path>
+                  </svg>
+                </div>
+                <div class="metric-details">
+                  <span class="metric-label">Precipitação</span>
+                  <span class="metric-value" id="weather-metric-rain">-- mm</span>
+                </div>
+              </div>
+
+              <div class="weather-metric-item">
+                <div class="metric-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m14.14-14.14l-1.41 1.41"></path>
+                  </svg>
+                </div>
+                <div class="metric-details">
+                  <span class="metric-label">Índice UV</span>
+                  <span class="metric-value" id="weather-metric-uv">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Previsão dos Próximos 4 Dias -->
+            <div class="weather-forecast-strip" id="weather-forecast-days">
+              <!-- Renderizado dinamicamente via JS -->
+            </div>
+          </div>
+        </section>
+
+        <!-- ==============================================================
+             PARTE 3: METADE DIREITA INFERIOR - MURAL DA SECRETARIA
+             ============================================================== -->
+        <section class="dashboard-panel secretary-panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <div class="panel-icon-pill" style="background: rgba(16, 185, 129, 0.12); color: #10b981; border-color: rgba(16, 185, 129, 0.3);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                  <path d="M9 14l2 2 4-4"></path>
+                </svg>
+              </div>
+              <h2 class="panel-title">MURAL DA SECRETARIA ADMINISTRATIVA</h2>
+            </div>
+
+            <!-- Navegador de Abas com Ciclo Automático -->
+            <div class="tab-nav-pills">
+              <button class="tab-nav-btn active" data-tab="notices">Comunicados</button>
+              <button class="tab-nav-btn" data-tab="agenda">Agenda do Dia</button>
+              <button class="tab-nav-btn" data-tab="directory">Ramais</button>
+            </div>
+          </div>
+
+          <div class="secretary-content-wrapper">
+            <!-- ABA 1: COMUNICADOS E AVISOS OFICIAIS -->
+            <div id="view-notices" class="tab-view active">
+              <div id="notices-container" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Carregado via JS -->
+              </div>
+            </div>
+
+            <!-- ABA 2: AGENDA DE REUNIÕES E COMPROMISSOS -->
+            <div id="view-agenda" class="tab-view">
+              <div id="agenda-container" class="agenda-grid">
+                <!-- Carregado via JS -->
+              </div>
+            </div>
+
+            <!-- ABA 3: GUIA DE RAMAIS E EXPEDIENTE -->
+            <div id="view-directory" class="tab-view">
+              <div id="directory-container" class="directory-grid">
+                <!-- Carregado via JS -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- ====================================================================
+         RODAPÉ TICKER (LETREIRO DIGITAL DE NOTÍCIAS E COMUNICADOS DESLIZANTE)
+         ==================================================================== -->
+    <footer class="bottom-ticker-bar">
+      <div class="ticker-label-badge">
+        <span class="pulse-dot" style="background-color: #ffffff; box-shadow: 0 0 8px #ffffff;"></span>
+        <span>PLANTÃO DE NOTÍCIAS</span>
+      </div>
+      <div class="ticker-track-container">
+        <div class="ticker-content-track" id="ticker-content-track">
+          <!-- Manchetes e avisos inseridos dinamicamente -->
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ======================================================================
+       MODAL DE GESTÃO E EDIÇÃO RÁPIDA (ACESSO VIA TECLA 'E' OU BOTÃO DA ENGRENAGEM)
+       ====================================================================== -->
+  <div class="admin-modal-backdrop" id="admin-modal">
+    <div class="admin-modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Painel de Configuração da Secretaria (TV 42")</h3>
+        <button class="modal-close-btn" id="close-admin-btn">&times;</button>
+      </div>
+
+      <!-- Configurações Gerais -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="admin-form-group">
+          <label class="admin-label">Nome da Secretaria / Repartição:</label>
+          <input type="text" id="admin-dept-name" class="admin-input" placeholder="Ex: SECRETARIA DE ADMINISTRAÇÃO & GESTÃO">
+        </div>
+        <div class="admin-form-group">
+          <label class="admin-label">Cidade para Previsão do Tempo:</label>
+          <select id="admin-weather-city" class="admin-select">
+            <option value="Brasília">Brasília - DF</option>
+            <option value="São Paulo">São Paulo - SP</option>
+            <option value="Rio de Janeiro">Rio de Janeiro - RJ</option>
+            <option value="Belo Horizonte">Belo Horizonte - MG</option>
+            <option value="Curitiba">Curitiba - PR</option>
+            <option value="Salvador">Salvador - BA</option>
+            <option value="Fortaleza">Fortaleza - CE</option>
+            <option value="Recife">Recife - PE</option>
+            <option value="Porto Alegre">Porto Alegre - RS</option>
+            <option value="Goiânia">Goiânia - GO</option>
+            <option value="Manaus">Manaus - AM</option>
+            <option value="Belém">Belém - PA</option>
+          </select>
+        </div>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+
+      <!-- Formulário para Adicionar Comunicado -->
+      <div>
+        <h4 style="color: var(--accent-blue); font-size: 0.95rem; margin-bottom: 10px; font-weight: 700;">+ Adicionar Novo Comunicado no Mural:</h4>
+        <form id="form-add-notice" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+            <input type="text" id="notice-input-title" class="admin-input" placeholder="Título do aviso ou portaria" required>
+            <select id="notice-input-priority" class="admin-select">
+              <option value="info">Prioridade: Informativo</option>
+              <option value="warning">Prioridade: Atenção</option>
+              <option value="urgent">Prioridade: Urgente</option>
+            </select>
+          </div>
+          <textarea id="notice-input-text" class="admin-textarea" rows="2" placeholder="Texto explicativo do comunicado..." required></textarea>
+          <div style="display: flex; justify-content: flex-end;">
+            <button type="submit" class="btn-primary">Publicar no Mural</button>
+          </div>
+        </form>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+
+      <!-- Formulário para Adicionar Compromisso na Agenda -->
+      <div>
+        <h4 style="color: var(--accent-emerald); font-size: 0.95rem; margin-bottom: 10px; font-weight: 700;">+ Agendar Nova Reunião / Compromisso:</h4>
+        <form id="form-add-agenda" style="display: grid; grid-template-columns: 100px 1.5fr 1fr auto; gap: 10px; align-items: center;">
+          <input type="time" id="agenda-input-time" class="admin-input" required>
+          <input type="text" id="agenda-input-title" class="admin-input" placeholder="Pauta da reunião" required>
+          <input type="text" id="agenda-input-room" class="admin-input" placeholder="Sala / Local" required>
+          <button type="submit" class="btn-primary" style="background: var(--accent-emerald);">Agendar</button>
+        </form>
+      </div>
+
+      <div class="admin-btn-row" style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px;">
+        <button id="btn-reset-defaults" class="btn-secondary" style="color: #f87171; border-color: rgba(248, 113, 113, 0.3);">Restaurar Padrões</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts dos Módulos -->
+  <script src="js/weather.js"></script>
+  <script src="js/news.js"></script>
+  <script src="js/secretary.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
