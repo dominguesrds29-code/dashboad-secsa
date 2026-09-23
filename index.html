@@ -423,29 +423,14 @@
   <footer
     class="fixed bottom-0 left-0 right-0 z-50 h-12 bg-white border-fab-dark shadow-2xl flex items-center overflow-hidden border-t">
     <div class="h-full bg-fab-navy text-white px-5 flex items-center gap-2 shrink-0 z-20 border-r border-blue-900">
-      <span class="w-2 h-2 rounded-full bg-yellow-400"></span>
-      <span class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-yellow-300">Avisos DTCEA-SJ</span>
+      <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+      <span id="ticker-bca-badge" class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-yellow-300">Publicou no BCA</span>
     </div>
     <div class="flex-1 overflow-hidden relative bg-slate-900 text-slate-200 h-full flex items-center">
-      <div class="animate-marquee-smooth text-xs font-medium flex items-center gap-10 pl-6">
+      <div id="ticker-bca-conteudo" class="animate-marquee-smooth text-xs font-medium flex items-center gap-10 pl-6">
         <span class="flex items-center gap-2">
-          <strong class="text-white font-semibold">GSAU-SJ:</strong>
-          <span>Militares devem manter atualizados os dados de contato no Portal do Militar.</span>
-        </span>
-        <span class="text-slate-600">•</span>
-        <span class="flex items-center gap-2">
-          <strong class="text-white font-semibold">CIPA:</strong>
-          <span>Campanha de Prevenção a Acidentes nas Áreas Técnicas e Antenas de Radar ativa este mês.</span>
-        </span>
-        <span class="text-slate-600">•</span>
-        <span class="flex items-center gap-2">
-          <strong class="text-white font-semibold">Comando:</strong>
-          <span>Reunião Geral Administrativa nesta sexta-feira às 10h00 no Auditório Principal.</span>
-        </span>
-        <span class="text-slate-600">•</span>
-        <span class="flex items-center gap-2">
-          <strong class="text-white font-semibold">CRCEA-SE:</strong>
-          <span>Homologação das férias do 1º Trimestre/2025 aberta nas subdivisões.</span>
+          <strong class="text-yellow-300 font-semibold">BCA:</strong>
+          <span>Carregando publicações oficiais...</span>
         </span>
       </div>
     </div>
@@ -627,6 +612,50 @@
     // Executa a primeira chamada imediatamente e repete a cada 30 segundos
     carregarDadosEfetivo();
     setInterval(carregarDadosEfetivo, 30000);
+
+    // 5. Carregar e Atualizar Notícias Extraídas do PDF do BCA
+    async function carregarNoticiasBCA() {
+      const tickerConteudo = document.getElementById('ticker-bca-conteudo');
+      const tickerBadge = document.getElementById('ticker-bca-badge');
+      if (!tickerConteudo) return;
+
+      try {
+        const response = await fetch('api_bca.php?t=' + Date.now());
+        if (!response.ok) throw new Error('Erro ao buscar BCA: ' + response.status);
+        const data = await response.json();
+
+        if (data.success && data.noticias && data.noticias.length > 0) {
+          if (tickerBadge && data.bca_numero) {
+            tickerBadge.textContent = `Publicou no BCA ${data.bca_numero}`;
+            if (data.bca_data) {
+              tickerBadge.title = `BCA Nº ${data.bca_numero} de ${data.bca_data}`;
+            }
+          }
+
+          // Monta os itens do ticker com badges temáticas e tipografia otimizada para TV
+          const itemsHtml = data.noticias.map(n => `
+            <span class="flex items-center gap-2 whitespace-nowrap">
+              <strong class="text-yellow-300 font-bold uppercase tracking-wider text-[11px] px-2 py-0.5 rounded bg-blue-950/90 border border-blue-800/80 shadow-xs">${n.tag}:</strong>
+              <span class="text-slate-100 font-medium">${n.texto}</span>
+            </span>
+          `).join('<span class="text-yellow-500/70 font-bold text-sm px-2">•</span>');
+
+          tickerConteudo.innerHTML = itemsHtml;
+        } else {
+          tickerConteudo.innerHTML = `
+            <span class="flex items-center gap-2 whitespace-nowrap text-slate-300">
+              <strong class="text-yellow-300 font-bold">BCA:</strong>
+              <span>Nenhum boletim recente localizado na pasta /bca.</span>
+            </span>
+          `;
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar notícias do BCA:', err);
+      }
+    }
+
+    carregarNoticiasBCA();
+    setInterval(carregarNoticiasBCA, 60000);
   </script>
 </body>
 
