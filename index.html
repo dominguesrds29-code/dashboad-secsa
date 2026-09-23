@@ -110,11 +110,11 @@
             <span class="text-emerald-400 font-bold font-mono text-sm" id="header-prontidao">--%</span>
           </div>
           <div class="h-7 w-[1px] bg-white/10"></div>
-          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3">
             <div class="flex flex-col items-end">
               <span class="text-2xl font-bold text-white tracking-widest font-mono" id="relogio-tv">--:--:--</span>
               <span class="text-[10px] font-medium text-blue-200/70 uppercase tracking-wider"
-                id="header-data-extenso">Brasília • Carregando...</span>
+                id="header-data-extenso">São José dos Campos • Carregando...</span>
             </div>
             <div
               class="w-9 h-9 rounded-lg bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-200 shadow-sm">
@@ -157,11 +157,6 @@
                 id="efetivo-updated-time">--:--:--</span>
             </p>
           </div>
-          <a href="http://localhost/ctr_efetivo/public/dashboard.php" target="_blank" title="Abrir Sistema de Efetivo"
-            class="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 transition">
-            <span>Abrir Painel CTR</span>
-            <span class="material-symbols-outlined text-sm">open_in_new</span>
-          </a>
         </div>
 
         <!-- 1. Bento Grid de Estatísticas Rápidas do Dia -->
@@ -475,7 +470,7 @@
         const dia = String(now.getDate()).padStart(2, '0');
         const mes = meses[now.getMonth()];
         const ano = now.getFullYear();
-        dataElement.textContent = `Brasília • ${dia} ${mes} ${ano}`;
+        dataElement.textContent = `São José dos Campos • ${dia} ${mes} ${ano}`;
       }
     }
     setInterval(updateClock, 1000);
