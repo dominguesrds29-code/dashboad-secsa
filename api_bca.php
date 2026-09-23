@@ -95,71 +95,111 @@ if (preg_match('/([0-9]{2})[_\-]([0-9]{2})[_\-](20[0-9]{2})/', basename($latestP
 
 $noticias = [];
 
-// 1. Manchete do BCA
-$noticias[] = [
-    'tag' => "BCA Nº {$bcaNumero}",
-    'destaque' => true,
-    'texto' => "Boletim do Comando da Aeronáutica Nº {$bcaNumero}" . ($bcaData ? " ({$bcaData})" : "") . " publicado e disponível para consulta."
-];
-
-$textosAdicionados = [];
-
-// 2. Divide em atos/parágrafos
-$blocos = preg_split('/(?=(?:PORTARIA|AUTORIZAR|DESIGNAR|CONCEDER|Coronel|Tenente-Coronel|Major|1S|SO)\s+)/iu', $clean);
-
-foreach ($blocos as $bRaw) {
-    $b = trim($bRaw);
-    if (mb_strlen($b) < 35) continue;
-
-    $tag = null;
-    if (preg_match('/\b(GAP-SJ|São José dos Campos|CCA-SJ|SERINFRA-SJ)\b/iu', $b)) {
-        $tag = 'GAP-SJ / SJC';
-    } elseif (preg_match('/\b(DTCEA|DTCEA-SJ|SISCEAB|CINDACTA)\b/iu', $b)) {
-        $tag = 'DTCEA / SISCEAB';
-    } elseif (preg_match('/\b(DECEA|CRCEA-SE|CGNA|SRPV)\b/iu', $b)) {
-        $tag = 'DECEA / SISCEAB';
-    } elseif (preg_match('/\b(DCTA|ITA|IAE|IEAv|IFI)\b/iu', $b)) {
-        $tag = 'DCTA / ITA';
-    } elseif (stripos($b, 'AUTORIZAR o afastamento do país') !== false || stripos($b, 'viagem ao exterior') !== false || stripos($b, 'PLAMTAX') !== false) {
-        $tag = 'MISSÃO EXTERIOR';
-    } elseif (stripos($b, 'PORTARIA GABAER') !== false) {
-        $tag = 'GABAER';
-    } elseif (preg_match('/\b(GTE|COMGAP|EMAER|SEFA|DIRAP|DIRSA)\b/iu', $b, $mOrg)) {
-        $tag = strtoupper($mOrg[1]);
-    } elseif (stripos($b, 'Curso') !== false && (stripos($b, 'Aproveitamento') !== false || stripos($b, 'Matricular') !== false || stripos($b, 'Conclusão') !== false)) {
-        $tag = 'CURSOS & ENSINO';
-    } elseif (stripos($b, 'DESIGNAR') !== false || stripos($b, 'NOMEAR') !== false) {
-        $tag = 'DESIGNAÇÃO';
-    } elseif (stripos($b, 'CONCEDER') !== false) {
-        $tag = 'CONCESSÃO';
-    }
-
-    if ($tag !== null) {
-        // Formata o trecho
-        $tam = min(240, mb_strlen($b));
-        $trecho = mb_substr($b, 0, $tam);
-        if ($tam === 240) {
-            $ultimoPonto = max(mb_strrpos($trecho, '.'), mb_strrpos($trecho, ';'));
-            if ($ultimoPonto !== false && $ultimoPonto > 60) {
-                $trecho = mb_substr($trecho, 0, $ultimoPonto + 1);
-            } else {
-                $trecho .= '...';
-            }
-        }
-        $trecho = trim($trecho);
-        $hash = md5(mb_substr($trecho, 0, 45));
-
-        if (!isset($textosAdicionados[$hash])) {
-            $textosAdicionados[$hash] = true;
-            $noticias[] = [
-                'tag' => $tag,
-                'destaque' => false,
-                'texto' => $trecho
-            ];
-        }
-    }
-    if (count($noticias) >= 12) break;
+// 1. AJUDA HUMANITÁRIA & OPERAÇÕES ESPECIAIS
+if (preg_match('/(ajuda humanit[aá]ria|assist[eê]ncia humanit[aá]ria|socorro|calamidade|resgate|Pereira|Col[oô]mbia)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🔴 AJUDA HUMANITÁRIA INTERNACIONAL',
+        'manchete' => 'FAB cumpre com êxito missões operacionais e de assistência humanitária',
+        'linha_apoio' => 'Militares e aeronaves da Força Aérea Brasileira atuam no suporte a comunidades e cooperação humanitária no Brasil e no exterior.'
+    ];
 }
+
+// 2. DIPLOMACIA E VIAGENS PRESIDENCIAIS (GTE / Nova Iorque / Comitiva)
+if (preg_match('/(PLAMTAX|Nova Iorque|Presidência da República|GTE|viagem presidencial)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🌐 DIPLOMACIA E VIAGENS PRESIDENCIAIS',
+        'manchete' => 'Aeronáutica mobiliza equipe em Nova Iorque para apoio à Presidência da República',
+        'linha_apoio' => 'Militares do Grupo de Transporte Especial (GTE) e do Gabinete do Comandante foram designados para prestar suporte à comitiva presidencial nos Estados Unidos.'
+    ];
+}
+
+// 3. REESTRUTURAÇÃO & ESTADO-MAIOR CONJUNTO
+if (preg_match('/(Estado-Maior Conjunto|EMCFA|Subchefia de Política|Subchefia de Logística)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🛡️ REESTRUTURAÇÃO E ESTADO-MAIOR',
+        'manchete' => 'Comando da Aeronáutica e Estado-Maior Conjunto renovam funções estratégicas de Defesa',
+        'linha_apoio' => 'Portarias oficiais definem novas designações de oficiais e graduados para setores de planejamento tático, inteligência e logística integrada.'
+    ];
+}
+
+// 4. MISSÕES INTERNACIONAIS & REPRESENTAÇÃO
+if (preg_match('/(afastamento do pa[íi]s|Marrakech Airshow|adido|conferência internacional)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '✈️ MISSÕES INTERNACIONAIS E COOPERAÇÃO',
+        'manchete' => 'Delegações da Aeronáutica são autorizadas para missões no exterior e intercâmbio militar',
+        'linha_apoio' => 'Representantes da Força Aérea participam de feiras internacionais de defesa, treinamentos bilaterais e inspeções de segurança em países parceiros.'
+    ];
+}
+
+// 5. ATOS DO COMANDANTE & GABAER
+if (preg_match('/PORTARIA GABAER/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🏛️ ATOS DO COMANDANTE DA AERONÁUTICA',
+        'manchete' => 'Gabinete do Comandante publica novas portarias de pessoal e planejamento da Força',
+        'linha_apoio' => 'Atos normativos homologam diretrizes operacionais, movimentações administrativas e regras de governança para todas as Organizações Militares.'
+    ];
+}
+
+// 6. CIÊNCIA, TECNOLOGIA & DEFESA (DCTA / ITA / SJC)
+if (preg_match('/\b(DCTA|ITA|IAE|IEAv|IFI|GAP-SJ|DTCEA-SJ|São José dos Campos)\b/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🔬 CIÊNCIA, TECNOLOGIA E DEFESA AEROESPACIAL',
+        'manchete' => 'Polo Aeroespacial de São José dos Campos e DCTA registram novos atos e publicações',
+        'linha_apoio' => 'Projetos científicos, tecnológicos e administrativos do campus do DCTA, ITA e organizações do Vale do Paraíba avançam com diretrizes publicadas.'
+    ];
+}
+
+// 7. CONTROLE DO ESPAÇO AÉREO & SISCEAB
+if (preg_match('/\b(DECEA|CINDACTA|DTCEA|CGNA|SRPV|SISCEAB|Tráfego Aéreo)\b/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '📡 CONTROLE DO ESPAÇO AÉREO E SISCEAB',
+        'manchete' => 'DECEA e CINDACTA mantêm conformidade contínua e prontidão do espaço aéreo brasileiro',
+        'linha_apoio' => 'Instruções técnicas e administrativas reforçam a modernização de radares, telecomunicações e prontidão dos Destacamentos de Controle.'
+    ];
+}
+
+// 8. SAÚDE OPERACIONAL & ASSISTÊNCIA
+if (preg_match('/\b(DIRSA|Saúde|Hospital|Junta de Saúde|Inspeção de Saúde|NSCA 160)\b/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🏥 SAÚDE OPERACIONAL E LOGÍSTICA',
+        'manchete' => 'Diretoria de Saúde atualiza diretrizes assistenciais e inspeções periciais da Força',
+        'linha_apoio' => 'O Sistema de Saúde da Aeronáutica padroniza rotinas hospitalares, perícias médicas e atendimento aos militares e seus dependentes.'
+    ];
+}
+
+// 9. ENSINO, CAPACITAÇÃO E FORMAÇÃO
+if (preg_match('/\b(Curso|Matr[íi]cula|Aproveitamento|Conclus[ãa]o|Estágio|EEAR|AFA|EPCAR|CIAAR)\b/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🎓 ENSINO, FORMAÇÃO E CAPACITAÇÃO',
+        'manchete' => 'Comando da Aeronáutica homologa conclusões de cursos e matrículas de especialização',
+        'linha_apoio' => 'Atos oficiais regulamentam cursos de formação e aperfeiçoamento profissional para o contínuo desenvolvimento do efetivo militar.'
+    ];
+}
+
+// 10. INTEGRAÇÃO DAS FORÇAS ARMADAS
+if (preg_match('/(Marinha|Exército|Ministério da Defesa|Interforças|Operação Conjunta)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🪖 INTEGRAÇÃO DAS FORÇAS ARMADAS',
+        'manchete' => 'Ações integradas fortalecem a interoperabilidade entre Marinha, Exército e Aeronáutica',
+        'linha_apoio' => 'Instruções conjuntas e cooperação entre as Forças garantem pronta resposta operacional em missões de soberania e defesa nacional.'
+    ];
+}
+
+// 11. DESPORTO & ALTO RENDIMENTO
+if (preg_match('/(Desporto|Atleta|Campeonato|CDA|Torneio|Basquete|Vôlei|Natação)/iu', $clean)) {
+    $noticias[] = [
+        'tema' => '🏀 ESPORTE E REPRESENTAÇÃO DE ALTO RENDIMENTO',
+        'manchete' => 'Atletas militares da FAB representam o Brasil em competições nacionais e internacionais',
+        'linha_apoio' => 'Militares do Programa de Atletas de Alto Rendimento da Aeronáutica disputam títulos de destaque nos cenários nacional e global.'
+    ];
+}
+
+// 12. Manchete Geral do Boletim
+$noticias[] = [
+    'tema' => "🔴 BOLETIM OFICIAL Nº {$bcaNumero}",
+    'manchete' => "Boletim do Comando da Aeronáutica Nº {$bcaNumero} publicado na íntegra",
+    'linha_apoio' => "Edição oficial de {$bcaData} disponibilizada para conhecimento e cumprimento de todo o efetivo da Guarnição e Destacamento."
+];
 
 echo json_encode([
     'success' => true,
@@ -170,3 +210,4 @@ echo json_encode([
     'hora_leitura' => date('H:i:s'),
     'noticias' => $noticias
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
