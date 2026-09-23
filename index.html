@@ -497,6 +497,14 @@
     setInterval(updateClock, 1000);
     updateClock();
 
+    // Função auxiliar para abreviar nomes longos de seções no painel
+    function formatarNomeSecao(nome) {
+      if (!nome) return '';
+      return nome
+        .replace(/SECRETARIA ADMINISTRATIVA/gi, 'SEC. ADMINISTRATIVA')
+        .replace(/SECRETARIA OPERACIONAL/gi, 'SEC. OPERACIONAL');
+    }
+
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
     async function carregarDadosEfetivo() {
       try {
@@ -569,11 +577,12 @@
             const perc = s.percentual || 0;
             const barColor = perc > 75 ? 'bg-emerald-500' : (perc > 40 ? 'bg-amber-500' : 'bg-rose-500');
             const textColor = perc > 75 ? 'text-emerald-700' : (perc > 40 ? 'text-amber-700' : 'text-rose-700');
+            const nomeSecaoExibicao = formatarNomeSecao(s.secao);
 
             return `
               <tr class="hover:bg-white/80 transition-colors">
-                <td class="py-2.5 pl-1 font-bold text-slate-800 text-sm truncate max-w-[150px]" title="${s.secao}">
-                  ${s.secao}
+                <td class="py-2.5 pl-1 font-bold text-slate-800 text-sm truncate max-w-[170px]" title="${s.secao}">
+                  ${nomeSecaoExibicao}
                 </td>
                 <td class="py-2.5 text-center text-slate-700 font-mono font-semibold text-sm">${s.total}</td>
                 <td class="py-2.5 text-center text-emerald-700 font-mono font-bold text-sm">${s.presentes}</td>
@@ -613,7 +622,7 @@
             <div class="p-2.5 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-between hover:border-slate-300 transition">
               <div class="min-w-0 pr-2">
                 <div class="text-sm font-bold text-slate-800 truncate">${m.nome_formatado}</div>
-                <div class="text-xs text-slate-400 font-medium truncate">${m.secao}</div>
+                <div class="text-xs text-slate-400 font-medium truncate">${formatarNomeSecao(m.secao)}</div>
               </div>
               <span class="px-2.5 py-1 rounded-full text-xs font-bold shrink-0 border ${m.status_class || 'bg-slate-100 text-slate-700 border-slate-200'}">
                 ${m.status_label}

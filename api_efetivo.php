@@ -72,6 +72,24 @@ function formatarMilitar($m) {
     return trim($posto . $nomeStr);
 }
 
+// Abreviar nomes longos de seções exclusivamente para este painel
+function abreviarNomeSecao($secao) {
+    if (!$secao) return '';
+    $trimmed = trim($secao);
+    $upper = mb_strtoupper($trimmed, 'UTF-8');
+
+    if ($upper === 'SECRETARIA ADMINISTRATIVA') {
+        return 'SEC. ADMINISTRATIVA';
+    }
+    if ($upper === 'SECRETARIA OPERACIONAL') {
+        return 'SEC. OPERACIONAL';
+    }
+
+    $replaced = preg_replace('/^SECRETARIA\s+ADMINISTRATIVA\b/i', 'SEC. ADMINISTRATIVA', $trimmed);
+    $replaced = preg_replace('/^SECRETARIA\s+OPERACIONAL\b/i', 'SEC. OPERACIONAL', $replaced);
+    return $replaced;
+}
+
 try {
     $db = new PDO("mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -179,7 +197,8 @@ try {
         $perc = $tot > 0 ? round(($pres / $tot) * 100) : 0;
         $secoes[] = [
             'id' => (int)$s['secao_id'],
-            'secao' => $s['secao'],
+            'secao' => abreviarNomeSecao($s['secao']),
+            'secao_original' => $s['secao'],
             'total' => $tot,
             'presentes' => $pres,
             'ausentes' => (int)$s['ausentes_secao'],
@@ -225,7 +244,8 @@ try {
             'grade' => $m['grade'] ?? '',
             'war_name' => $m['war_name'] ?? '',
             'saram' => $m['saram'] ?? '',
-            'secao' => $m['secao'],
+            'secao' => abreviarNomeSecao($m['secao']),
+            'secao_original' => $m['secao'],
             'status' => $st,
             'status_label' => $stInfo['label'],
             'status_tipo' => $stInfo['tipo'],
@@ -263,7 +283,8 @@ try {
             'nome_formatado' => formatarMilitar($m),
             'grade' => $m['grade'] ?? '',
             'war_name' => $m['war_name'] ?? '',
-            'secao' => $m['secao'],
+            'secao' => abreviarNomeSecao($m['secao']),
+            'secao_original' => $m['secao'],
             'status' => $st,
             'status_label' => $stInfo['label'],
             'status_class' => $stInfo['class']
