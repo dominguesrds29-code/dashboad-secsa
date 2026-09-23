@@ -633,12 +633,11 @@
             }
           }
 
-          // Renderizador no estilo NotebookLM (Tema com ícone, MANCHETE e Linha de Apoio)
+          // Renderizador no estilo NotebookLM (Tema com ícone, Manchete direta e Linha de Apoio)
           const renderItem = (n) => `
             <div class="inline-flex items-center gap-2.5 px-3.5 py-1 rounded-md bg-slate-800/90 border border-slate-700/60 shadow-xs">
               <span class="font-extrabold text-xs text-yellow-400 tracking-wide uppercase flex items-center gap-1 shrink-0">${n.tema}</span>
               <span class="text-slate-600 font-bold">|</span>
-              <span class="text-xs font-black text-amber-300 uppercase tracking-wider font-mono shrink-0">MANCHETE:</span>
               <span class="text-xs font-bold text-white tracking-normal">${n.manchete}</span>
               <span class="text-slate-600 font-bold">|</span>
               <span class="text-xs font-bold text-sky-400 shrink-0">Linha de Apoio:</span>
