@@ -126,24 +126,90 @@ function sintetizarAtoJornalistico($textoAto, $bcaNumero, $bcaData) {
         return null;
     }
 
-    // Linha de Apoio: Extrai o resumo real do texto do ato
-    $textoLimpo = preg_replace('/^(?:PORTARIA|AUTORIZAR|DESIGNAR|CONCEDER|O\s+COMANDANTE|O\s+CHEFE|A\s+SECRETÁRIA).*?resolve:\s*/iu', '', $textoAto);
-    $textoLimpo = trim(preg_replace('/\s+/', ' ', $textoLimpo));
+    // Linha de Apoio Inteligente: Síntese executiva em 1 frase elegante
+    $linhaApoio = '';
 
-    // Formata o trecho em texto fluido (até 220 caracteres)
-    if (mb_strlen($textoLimpo) > 220) {
-        $corte = mb_substr($textoLimpo, 0, 220);
-        $ponto = max(mb_strrpos($corte, '.'), mb_strrpos($corte, ';'));
-        if ($ponto !== false && $ponto > 80) {
-            $linhaApoio = trim(mb_substr($corte, 0, $ponto + 1));
+    if (stripos($tema, 'DIPLOMACIA') !== false || stripos($tema, 'EXTERIOR') !== false) {
+        $militar = '';
+        if (preg_match('/(?:do|da|ao|à)\s+((?:General|Brigadeiro|Coronel|Tenente-Coronel|Major|Capitão|Tenente|Sargento|Cabo)[A-Za-zÀ-ÿ\s\(\)]+?)(?:,|\.|\s+para|\s+do|\s+da)/u', $textoAto, $mMil)) {
+            $militar = trim($mMil[1]);
+        }
+        $destino = '';
+        if (preg_match('/(Nova Iorque|Washington|Pereira|Colômbia|Marrocos|Marrakech|Santiago|Chile|Paris|França|Lisboa|Portugal|Roma|Itália|Madri|Espanha|Londres|Inglaterra)/iu', $textoAto, $mDest)) {
+            $destino = ' em ' . trim($mDest[1]);
+        }
+        if (stripos($textoAto, 'Presidência da República') !== false) {
+            $linhaApoio = "Militares designados pelo Comando prestarão apoio à comitiva presidencial durante compromissos oficiais{$destino}.";
+        } elseif ($militar) {
+            $linhaApoio = "A autorização contempla {$militar} para cumprimento de missão oficial e representação institucional{$destino}.";
         } else {
-            $linhaApoio = trim($corte) . '...';
+            $linhaApoio = "Militares da Força Aérea Brasileira foram designados para cumprir missão de intercâmbio e cooperação{$destino}.";
+        }
+    } elseif (stripos($tema, 'REESTRUTURAÇÃO') !== false || stripos($tema, 'PESSOAL') !== false) {
+        $militar = '';
+        if (preg_match('/DESIGNAR\s+(?:o|a|os|as)?\s*([A-Za-zÀ-ÿ\s\-\(\)\/\d]+?)\s+para/iu', $textoAto, $mMil)) {
+            $militar = trim($mMil[1]);
+        }
+        $funcao = '';
+        if (preg_match('/função\s+de\s+([A-Za-zÀ-ÿ\s\-]+?)(?:,|\.|\s+código|\s+da|\s+do)/iu', $textoAto, $mFunc)) {
+            $funcao = 'de ' . trim($mFunc[1]);
+        }
+        $setor = '';
+        if (preg_match('/(?:da|do|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç\s\-]+?(?:Subchefia|Chefia|Gabinete|Diretoria|Centro|Comando|Base|Esquadrão|Instituto|Departamento)[A-Za-zÀ-ÿ\s\-]*)/u', $textoAto, $mSetor)) {
+            $setor = ' na ' . trim($mSetor[1]);
+        }
+        if ($militar && $funcao) {
+            $linhaApoio = "O ato oficial nomeia {$militar} para exercer a função {$funcao}{$setor}.";
+        } elseif ($funcao) {
+            $linhaApoio = "A publicação formaliza a designação para a função {$funcao}{$setor} na estrutura organizacional.";
+        } else {
+            $linhaApoio = "A portaria define novas atribuições e movimentações estratégicas no quadro de pessoal da Força.";
+        }
+    } elseif (stripos($tema, 'GUARNIÇÃO SJ') !== false || stripos($tema, 'CIÊNCIA') !== false) {
+        if (preg_match('/Programa de Gestão/iu', $textoAto)) {
+            $linhaApoio = "A instrução aprovada pela Direção-Geral do DCTA regulamenta as novas diretrizes do Programa de Gestão e Desempenho no campus.";
+        } elseif (preg_match('/(IFI|IEAv|IAE|ITA|GAP-SJ|DTCEA-SJ)/iu', $textoAto, $mOrg)) {
+            $sigla = strtoupper(trim($mOrg[1]));
+            $linhaApoio = "A publicação oficial contempla diretrizes administrativas e atos de gestão voltados ao {$sigla} em São José dos Campos.";
+        } else {
+            $linhaApoio = "Normativas e resoluções administrativas atualizam procedimentos técnicos e de gestão na Guarnição de São José dos Campos.";
+        }
+    } elseif (stripos($tema, 'COMANDANTE') !== false || stripos($tema, 'GABAER') !== false) {
+        $linhaApoio = "O Comandante da Aeronáutica homologou decisões normativas e atos de pessoal com vigência imediata para as Organizações Militares.";
+    } elseif (stripos($tema, 'SAÚDE') !== false) {
+        $linhaApoio = "A Diretoria de Saúde padroniza diretrizes técnicas, rotinas periciais e procedimentos hospitalares no Sistema de Saúde da Aeronáutica.";
+    } elseif (stripos($tema, 'ESPAÇO AÉREO') !== false || stripos($tema, 'SISCEAB') !== false) {
+        $linhaApoio = "Instruções técnicas emitidas pelo DECEA reforçam a operacionalidade, radiocomunicação e prontidão dos Destacamentos de Controle.";
+    } elseif (stripos($tema, 'ENSINO') !== false || stripos($tema, 'CAPACITAÇÃO') !== false) {
+        if (preg_match('/Curso de ([A-Za-zÀ-ÿ\s\-]+?)(?:,|\.|\(|\s+a ser)/iu', $textoAto, $mCur)) {
+            $linhaApoio = "A publicação oficial autoriza a matrícula de militares no Curso de " . trim($mCur[1]) . " para capacitação continuada.";
+        } else {
+            $linhaApoio = "O ato oficial homologa matrículas e etapas de capacitação técnica para o contínuo aperfeiçoamento do efetivo.";
+        }
+    } elseif (stripos($tema, 'INTEGRAÇÃO') !== false || stripos($tema, 'DEFESA') !== false) {
+        if (preg_match('/Segurança Cibernética|NSCA 7-22/iu', $textoAto)) {
+            $linhaApoio = "A norma atualiza os procedimentos obrigatórios para comunicação e acompanhamento de eventos de segurança cibernética no COMAER.";
+        } else {
+            $linhaApoio = "Medidas conjuntas entre a Aeronáutica e o Ministério da Defesa ampliam a sinergia institucional e a governança operacional.";
         }
     } else {
-        $linhaApoio = $textoLimpo;
+        // Fallback dinâmico com extração da primeira frase substancial
+        $textoLimpo = preg_replace('/^(?:PORTARIA|AUTORIZAR|DESIGNAR|CONCEDER|O\s+COMANDANTE|O\s+CHEFE|A\s+SECRETÁRIA).*?resolve:\s*/iu', '', $textoAto);
+        $textoLimpo = trim(preg_replace('/\s+/', ' ', $textoLimpo));
+        if (mb_strlen($textoLimpo) > 170) {
+            $corte = mb_substr($textoLimpo, 0, 170);
+            $ponto = max(mb_strrpos($corte, '.'), mb_strrpos($corte, ';'));
+            if ($ponto !== false && $ponto > 60) {
+                $linhaApoio = trim(mb_substr($corte, 0, $ponto + 1));
+            } else {
+                $linhaApoio = trim($corte) . '.';
+            }
+        } else {
+            $linhaApoio = $textoLimpo;
+        }
     }
 
-    if (mb_strlen($linhaApoio) < 30) return null;
+    if (mb_strlen($linhaApoio) < 25) return null;
 
     return [
         'tema' => $tema,
