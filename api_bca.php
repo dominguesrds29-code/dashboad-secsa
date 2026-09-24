@@ -368,6 +368,8 @@ if (!is_dir($bcaDir)) {
 // 1. Tenta sincronizar e baixar o último boletim oficial do CENDOC SISBCA
 $syncCendoc = sincronizarUltimoBcaCendoc($bcaDir);
 
+clearstatcache();
+
 // 2. Localiza arquivos PDF locais
 $files = glob($bcaDir . '/*.pdf');
 if (empty($files)) {
@@ -386,19 +388,30 @@ if (empty($files)) {
     exit;
 }
 
-// Ordena para obter o arquivo mais recente (prioriza por data de modificação ou número do BCA)
-usort($files, function($a, $b) {
-    preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma);
-    preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb);
-    $numA = isset($ma[1]) ? (int)$ma[1] : 0;
-    $numB = isset($mb[1]) ? (int)$mb[1] : 0;
-    if ($numA !== $numB) {
-        return $numB - $numA;
+// 3. Se o CENDOC baixou ou confirmou o arquivo mais recente, prioriza-o diretamente
+$latestPdf = null;
+if (!empty($syncCendoc['pdf_arquivo'])) {
+    $caminhoCendoc = $bcaDir . DIRECTORY_SEPARATOR . $syncCendoc['pdf_arquivo'];
+    if (file_exists($caminhoCendoc) && filesize($caminhoCendoc) > 2000) {
+        $latestPdf = $caminhoCendoc;
     }
-    return filemtime($b) - filemtime($a);
-});
+}
 
-$latestPdf = $files[0];
+// Se não encontrou pelo CENDOC, seleciona pelo maior número de BCA e data de modificação
+if (!$latestPdf) {
+    usort($files, function($a, $b) {
+        $numA = 0;
+        $numB = 0;
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma)) $numA = (int)$ma[1];
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb)) $numB = (int)$mb[1];
+        if ($numA !== $numB) {
+            return $numB <=> $numA;
+        }
+        return filemtime($b) <=> filemtime($a);
+    });
+    $latestPdf = $files[0];
+}
+
 $pdfContent = file_get_contents($latestPdf);
 $pdfText = extractTextFromPdfContent($pdfContent);
 
