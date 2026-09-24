@@ -218,7 +218,11 @@ function sintetizarAtoJornalistico($textoAto, $bcaNumero, $bcaData) {
     ];
 }
 
-function downloadHttp($url, $timeout = 4) {
+function downloadHttp($url, $timeout = 6) {
+    $data = false;
+    $httpCode = 0;
+    $errorMsg = '';
+
     if (function_exists('curl_init')) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -228,81 +232,129 @@ function downloadHttp($url, $timeout = 4) {
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader');
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         $data = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $errorMsg = curl_error($ch);
         curl_close($ch);
-        if ($data !== false && $httpCode >= 200 && $httpCode < 300) {
-            return $data;
+
+        if ($data !== false && $httpCode >= 200 && $httpCode < 300 && strlen($data) > 0) {
+            return ['success' => true, 'code' => $httpCode, 'data' => $data, 'error' => ''];
         }
     }
     
     $ctx = stream_context_create([
         'http' => [
             'timeout' => $timeout,
-            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader'
+            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader',
+            'ignore_errors' => true
         ]
     ]);
-    return @file_get_contents($url, false, $ctx);
+    $fgData = @file_get_contents($url, false, $ctx);
+    if ($fgData !== false && strlen($fgData) > 0) {
+        return ['success' => true, 'code' => 200, 'data' => $fgData, 'error' => ''];
+    }
+
+    return ['success' => false, 'code' => $httpCode, 'data' => null, 'error' => $errorMsg ?: 'Falha na conexão HTTP'];
 }
 
 function sincronizarUltimoBcaCendoc($bcaDir) {
-    $cendocBase = 'http://www.cendoc.intraer/sisbca/';
+    $candidateUrls = [
+        'http://www.cendoc.intraer/sisbca/',
+        'http://www.cendoc.intraer/sisbca/index.php',
+        'http://cendoc.intraer/sisbca/',
+        'http://cendoc.intraer/sisbca/index.php'
+    ];
+
     $info = [
         'tentou_download' => false,
         'sucesso' => false,
         'mensagem' => '',
+        'url_acessada' => null,
         'bca_numero' => null,
         'bca_data' => null,
-        'pdf_arquivo' => null
+        'pdf_arquivo' => null,
+        'tentativas' => []
     ];
 
-    $html = downloadHttp($cendocBase, 3);
+    $html = null;
+    $baseUrlUsada = 'http://www.cendoc.intraer/sisbca/';
+
+    foreach ($candidateUrls as $url) {
+        $res = downloadHttp($url, 5);
+        $info['tentativas'][] = ['url' => $url, 'code' => $res['code'], 'success' => $res['success'], 'error' => $res['error']];
+        if ($res['success'] && !empty($res['data']) && strlen($res['data']) > 200) {
+            $html = $res['data'];
+            $baseUrlUsada = $url;
+            $info['url_acessada'] = $url;
+            break;
+        }
+    }
+
     if (!$html) {
-        $info['mensagem'] = 'Sem conexão direta com o SISBCA (CENDOC). Usando cache local.';
+        $info['mensagem'] = 'Sem conexão com os servidores SISBCA (CENDOC). Usando cache local.';
         return $info;
     }
 
     $info['tentou_download'] = true;
 
-    // Procura o Último Boletim Ostensivo no HTML do SISBCA
-    // Ex: <h3>- Último Boletim Ostensivo:</h3><p><b>BCA nº.: 163 de 24-09-2026</b> ... <a href='bca_pdf/2026/bca_163_24-09-2026.pdf'
-    if (preg_match('/Último\s+Boletim\s+Ostensivo.*?<b>BCA\s+n[ºo\?\.]*:\s*([0-9]+)\s+de\s+([0-9]{2}[_\-][0-9]{2}[_\-][0-9]{4})<\/b>.*?href=[\'"]([^\'"]+?\.pdf)[\'"]/is', $html, $matches)) {
-        $nr = $matches[1];
-        $dataRaw = $matches[2];
-        $pdfRelPath = $matches[3];
+    // Regex ultra flexível para capturar o Último Boletim Ostensivo do CENDOC
+    // Exemplo: <h3>- Último Boletim Ostensivo:</h3><p><b>BCA nº.: 163 de 24-09-2026</b> ... <a href='bca_pdf/2026/bca_163_24-09-2026.pdf'
+    $pattern = '/(?:[ÚU\xC3\xDA]|&Uacute;)?ltimo\s+Boletim\s+Ostensivo.*?BCA\s*n[ºo\?\.\s:]*([0-9]+)\s+de\s+([0-9]{1,2}[_\-\/][0-9]{1,2}[_\-\/][0-9]{2,4}).*?href=[\'"]([^\'"]+?)[\'"]/is';
+
+    if (preg_match($pattern, $html, $matches)) {
+        $nr = trim($matches[1]);
+        $dataRaw = trim($matches[2]);
+        $pdfRelPath = trim($matches[3]);
 
         $info['bca_numero'] = $nr;
         $info['bca_data'] = str_replace('-', '/', $dataRaw);
 
+        // Identifica ano
+        $ano = date('Y');
+        if (preg_match('/20[0-9]{2}/', $dataRaw, $mAno)) {
+            $ano = $mAno[0];
+        }
+
+        // Monta URLs candidatas para baixar o arquivo PDF direto
+        $urlsDownload = [];
         if (preg_match('/^https?:\/\//i', $pdfRelPath)) {
-            $pdfUrl = $pdfRelPath;
+            $urlsDownload[] = $pdfRelPath;
         } else {
-            $pdfUrl = rtrim($cendocBase, '/') . '/' . ltrim($pdfRelPath, '/');
+            $baseDomain = rtrim(preg_replace('/\/[^\/]*$/', '', $baseUrlUsada), '/');
+            $urlsDownload[] = $baseDomain . '/' . ltrim($pdfRelPath, '/');
+            $urlsDownload[] = "http://www.cendoc.intraer/sisbca/bca_pdf/{$ano}/bca_{$nr}_{$dataRaw}.pdf";
+            $urlsDownload[] = "http://cendoc.intraer/sisbca/bca_pdf/{$ano}/bca_{$nr}_{$dataRaw}.pdf";
         }
 
-        $nomeArquivo = basename(parse_url($pdfUrl, PHP_URL_PATH));
-        if (empty($nomeArquivo) || substr($nomeArquivo, -4) !== '.pdf') {
-            $nomeArquivo = "bca_{$nr}_{$dataRaw}.pdf";
-        }
-
+        $nomeArquivo = "bca_{$nr}_{$dataRaw}.pdf";
         $destinoLocal = rtrim($bcaDir, '/\\') . DIRECTORY_SEPARATOR . $nomeArquivo;
 
-        // Se o arquivo ainda não existe ou está corrompido/vazio
+        // Se o arquivo ainda não existe ou está vazio
         if (!file_exists($destinoLocal) || filesize($destinoLocal) < 2000) {
-            $conteudoPdf = downloadHttp($pdfUrl, 8);
-            if ($conteudoPdf && strlen($conteudoPdf) > 2000) {
-                file_put_contents($destinoLocal, $conteudoPdf);
-                $info['sucesso'] = true;
-                $info['mensagem'] = "BCA nº {$nr} baixado com sucesso do CENDOC!";
-                $info['pdf_arquivo'] = $nomeArquivo;
-            } else {
-                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível baixar o PDF no momento.";
+            $pdfBaixado = false;
+            foreach ($urlsDownload as $pdfUrl) {
+                $resPdf = downloadHttp($pdfUrl, 10);
+                if ($resPdf['success'] && !empty($resPdf['data']) && strlen($resPdf['data']) > 2000) {
+                    file_put_contents($destinoLocal, $resPdf['data']);
+                    $info['sucesso'] = true;
+                    $info['mensagem'] = "BCA nº {$nr} baixado com sucesso de {$pdfUrl}!";
+                    $info['pdf_arquivo'] = $nomeArquivo;
+                    $pdfBaixado = true;
+                    break;
+                }
+            }
+
+            if (!$pdfBaixado) {
+                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível concluir o download do PDF.";
             }
         } else {
             $info['sucesso'] = true;
             $info['mensagem'] = "BCA nº {$nr} de {$info['bca_data']} já está no cache local mais recente.";
             $info['pdf_arquivo'] = $nomeArquivo;
         }
+    } else {
+        $info['mensagem'] = 'Conectado ao CENDOC, mas o padrão do Último Boletim não foi localizado no HTML.';
     }
 
     return $info;
@@ -411,6 +463,7 @@ echo json_encode([
     'bca_data' => $bcaData,
     'total_noticias' => count($noticias),
     'hora_leitura' => date('H:i:s'),
+    'sync_cendoc' => $syncCendoc,
     'noticias' => $noticias
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
