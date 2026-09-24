@@ -336,21 +336,30 @@ function sincronizarUltimoBcaCendoc($bcaDir) {
             foreach ($urlsDownload as $pdfUrl) {
                 $resPdf = downloadHttp($pdfUrl, 10);
                 if ($resPdf['success'] && !empty($resPdf['data']) && strlen($resPdf['data']) > 2000) {
-                    file_put_contents($destinoLocal, $resPdf['data']);
-                    $info['sucesso'] = true;
-                    $info['mensagem'] = "BCA nº {$nr} baixado com sucesso de {$pdfUrl}!";
-                    $info['pdf_arquivo'] = $nomeArquivo;
+                    @chmod($bcaDir, 0777);
+                    $bytesEscritos = @file_put_contents($destinoLocal, $resPdf['data']);
+                    
+                    if ($bytesEscritos !== false && $bytesEscritos > 2000) {
+                        $info['sucesso'] = true;
+                        $info['mensagem'] = "BCA nº {$nr} baixado e salvo em {$destinoLocal} ({$bytesEscritos} bytes)!";
+                        $info['pdf_arquivo'] = $nomeArquivo;
+                    } else {
+                        $info['sucesso'] = true;
+                        $info['mensagem'] = "BCA nº {$nr} baixado da rede, mas a gravação no disco falhou (permissão da pasta bca/ é " . (is_writable($bcaDir) ? 'OK' : 'Sem permissão') . "). Processando em memória.";
+                        $info['pdf_arquivo'] = $nomeArquivo;
+                    }
+                    $info['pdf_conteudo_memoria'] = $resPdf['data'];
                     $pdfBaixado = true;
                     break;
                 }
             }
 
             if (!$pdfBaixado) {
-                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível concluir o download do PDF.";
+                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível concluir o download do PDF da rede.";
             }
         } else {
             $info['sucesso'] = true;
-            $info['mensagem'] = "BCA nº {$nr} de {$info['bca_data']} já está no cache local mais recente.";
+            $info['mensagem'] = "BCA nº {$nr} de {$info['bca_data']} já está salvo no cache local.";
             $info['pdf_arquivo'] = $nomeArquivo;
         }
     } else {
@@ -362,8 +371,9 @@ function sincronizarUltimoBcaCendoc($bcaDir) {
 
 $bcaDir = __DIR__ . '/bca';
 if (!is_dir($bcaDir)) {
-    mkdir($bcaDir, 0777, true);
+    @mkdir($bcaDir, 0777, true);
 }
+@chmod($bcaDir, 0777);
 
 // 1. Tenta sincronizar e baixar o último boletim oficial do CENDOC SISBCA
 $syncCendoc = sincronizarUltimoBcaCendoc($bcaDir);
@@ -372,7 +382,35 @@ clearstatcache();
 
 // 2. Localiza arquivos PDF locais
 $files = glob($bcaDir . '/*.pdf');
-if (empty($files)) {
+
+// 3. Determina o conteúdo do PDF (Memória direta ou Disco)
+$pdfContent = null;
+$latestPdfNome = 'bca_desconhecido.pdf';
+
+if (!empty($syncCendoc['pdf_conteudo_memoria'])) {
+    $pdfContent = $syncCendoc['pdf_conteudo_memoria'];
+    $latestPdfNome = $syncCendoc['pdf_arquivo'] ?? 'bca_cendoc_recente.pdf';
+} elseif (!empty($syncCendoc['pdf_arquivo']) && file_exists($bcaDir . DIRECTORY_SEPARATOR . $syncCendoc['pdf_arquivo'])) {
+    $caminhoCendoc = $bcaDir . DIRECTORY_SEPARATOR . $syncCendoc['pdf_arquivo'];
+    $pdfContent = file_get_contents($caminhoCendoc);
+    $latestPdfNome = $syncCendoc['pdf_arquivo'];
+} elseif (!empty($files)) {
+    // Ordena pelo maior número de BCA
+    usort($files, function($a, $b) {
+        $numA = 0;
+        $numB = 0;
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma)) $numA = (int)$ma[1];
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb)) $numB = (int)$mb[1];
+        if ($numA !== $numB) {
+            return $numB <=> $numA;
+        }
+        return filemtime($b) <=> filemtime($a);
+    });
+    $pdfContent = file_get_contents($files[0]);
+    $latestPdfNome = basename($files[0]);
+}
+
+if (!$pdfContent) {
     echo json_encode([
         'success' => false,
         'message' => 'Nenhum boletim PDF encontrado na pasta bca/ e CENDOC inacessível',
@@ -388,46 +426,27 @@ if (empty($files)) {
     exit;
 }
 
-// 3. Se o CENDOC baixou ou confirmou o arquivo mais recente, prioriza-o diretamente
-$latestPdf = null;
-if (!empty($syncCendoc['pdf_arquivo'])) {
-    $caminhoCendoc = $bcaDir . DIRECTORY_SEPARATOR . $syncCendoc['pdf_arquivo'];
-    if (file_exists($caminhoCendoc) && filesize($caminhoCendoc) > 2000) {
-        $latestPdf = $caminhoCendoc;
-    }
-}
-
-// Se não encontrou pelo CENDOC, seleciona pelo maior número de BCA e data de modificação
-if (!$latestPdf) {
-    usort($files, function($a, $b) {
-        $numA = 0;
-        $numB = 0;
-        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma)) $numA = (int)$ma[1];
-        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb)) $numB = (int)$mb[1];
-        if ($numA !== $numB) {
-            return $numB <=> $numA;
-        }
-        return filemtime($b) <=> filemtime($a);
-    });
-    $latestPdf = $files[0];
-}
-
-$pdfContent = file_get_contents($latestPdf);
 $pdfText = extractTextFromPdfContent($pdfContent);
 
 // Identifica Número do BCA e Data
 $bcaNumero = '';
 $bcaData = '';
 
-if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($latestPdf), $mNum)) {
+if (!empty($syncCendoc['bca_numero'])) {
+    $bcaNumero = $syncCendoc['bca_numero'];
+} elseif (preg_match('/bca[_\-\s]*([0-9]+)/i', $latestPdfNome, $mNum)) {
     $bcaNumero = $mNum[1];
 } elseif (preg_match('/BOLETIM DO COMANDO DA AERON[AÁ]UTICA N[ºO\?\s]*([0-9]+)/iu', $pdfText, $mNum)) {
     $bcaNumero = $mNum[1];
 }
 
-if (preg_match('/([0-9]{2})[_\-]([0-9]{2})[_\-](20[0-9]{2})/', basename($latestPdf), $mDate)) {
+if (!empty($syncCendoc['bca_data'])) {
+    $bcaData = $syncCendoc['bca_data'];
+} elseif (preg_match('/([0-9]{2})[_\-]([0-9]{2})[_\-](20[0-9]{2})/', $latestPdfNome, $mDate)) {
     $bcaData = "{$mDate[1]}/{$mDate[2]}/{$mDate[3]}";
 } elseif (preg_match('/([0-9]{1,2}\s+de\s+[a-zç]+\s+de\s+20[0-9]{2})/iu', $pdfText, $mDate)) {
+    $bcaData = trim($mDate[1]);
+}
     $bcaData = trim($mDate[1]);
 }
 
