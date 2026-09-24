@@ -571,7 +571,7 @@
     carregarDadosEfetivo();
     setInterval(carregarDadosEfetivo, 30000);
 
-    // 5. Carregar Notícias do BCA no Card Superior Direito
+    // 5. Carregar Ocorrências e Citações do Efetivo no BCA
     async function carregarNoticiasBCA() {
       const cardConteudo = document.getElementById('bca-card-conteudo');
       const cardBadge = document.getElementById('bca-numero-card-badge');
@@ -583,46 +583,83 @@
         if (!response.ok) throw new Error('Erro ao buscar BCA: ' + response.status);
         const data = await response.json();
 
-        if (data.success && data.noticias && data.noticias.length > 0) {
-          if (cardBadge && data.bca_numero) {
-            cardBadge.textContent = `BCA Nº ${data.bca_numero}`;
-            if (data.bca_data) {
-              cardBadge.title = `Publicado em ${data.bca_data}`;
-            }
+        if (cardBadge && data.bca_numero) {
+          cardBadge.textContent = `BCA Nº ${data.bca_numero}`;
+          if (data.bca_data) {
+            cardBadge.title = `Publicado em ${data.bca_data}`;
           }
+        }
 
+        if (data.success && data.ocorrencias && data.ocorrencias.length > 0) {
           if (totalBadge) {
-            totalBadge.textContent = `${data.noticias.length} publicações`;
+            totalBadge.className = 'text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300 flex items-center gap-1.5';
+            totalBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span> ${data.ocorrencias.length} Citação(ões)`;
           }
 
-          // Renderização nos cards verticais com scroll suave
-          cardConteudo.innerHTML = data.noticias.map((n, idx) => `
-            <div class="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:border-amber-300 hover:bg-amber-50/30 transition shadow-2xs">
-              <div class="flex items-center gap-2 mb-1.5">
-                <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-200/60 tracking-wide">
-                  ${n.tema}
+          cardConteudo.innerHTML = data.ocorrencias.map((oc, idx) => `
+            <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/90 hover:border-amber-400 hover:bg-amber-100/50 transition shadow-2xs">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${oc.tipo === 'unidade' ? 'bg-indigo-600 text-white' : 'bg-amber-600 text-white'} tracking-wider">
+                    ${oc.tipo === 'unidade' ? '🏛️ UNIDADE' : '🪖 MILITAR CITADO'}
+                  </span>
+                  <span class="text-xs font-bold text-slate-800">
+                    ${oc.militar_guerra || oc.militar_nome}
+                  </span>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-white text-slate-700 border border-slate-200 shadow-2xs">
+                  ${oc.termo_encontrado}
                 </span>
               </div>
-              <h4 class="text-sm font-bold text-slate-900 leading-snug">
-                ${n.manchete}
-              </h4>
-              <p class="text-xs text-slate-600 mt-1.5 leading-relaxed bg-white/80 p-2 rounded-lg border border-slate-100">
-                <strong class="text-blue-700 font-semibold">Detalhes:</strong> ${n.linha_apoio}
-              </p>
+              
+              <div class="text-xs text-slate-700 mt-1.5 leading-relaxed bg-white/95 p-3 rounded-lg border border-amber-200/80 shadow-inner">
+                <div class="text-[11px] text-amber-900 font-semibold mb-1 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-xs">format_quote</span>
+                  Trecho Oficial no Boletim:
+                </div>
+                <p class="font-serif italic text-slate-800">${oc.contexto}</p>
+                ${oc.militar_secao ? `
+                  <div class="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Seção: <strong>${oc.militar_secao}</strong></span>
+                    <span>SARAM: <strong>${oc.militar_saram}</strong></span>
+                  </div>
+                ` : ''}
+              </div>
             </div>
           `).join('');
+        } else if (data.success) {
+          if (totalBadge) {
+            totalBadge.className = 'text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1';
+            totalBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Sem Citações`;
+          }
+
+          cardConteudo.innerHTML = `
+            <div class="h-full flex flex-col justify-center items-center py-6 px-4 text-center">
+              <div class="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
+                <span class="material-symbols-outlined text-2xl">verified_user</span>
+              </div>
+              <h4 class="text-sm font-bold text-slate-800">Tudo Verificado no BCA nº ${data.bca_numero || 'Recente'}</h4>
+              <p class="text-xs text-slate-500 mt-1.5 max-w-sm leading-relaxed">
+                Nenhuma publicação, portaria ou ato administrativo citando militares do efetivo ou o termo <strong>DTCEA-SJ</strong> nesta edição.
+              </p>
+              <div class="mt-4 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-500 flex items-center gap-2">
+                <span class="material-symbols-outlined text-xs text-blue-600">manage_search</span>
+                <span>${data.total_militares_monitorados || 'Todos os'} militares ativos monitorados por SARAM e Nome Completo</span>
+              </div>
+            </div>
+          `;
         } else {
-          if (totalBadge) totalBadge.textContent = 'Sem publicações';
+          if (totalBadge) totalBadge.textContent = 'Indisponível';
           cardConteudo.innerHTML = `
             <div class="py-10 text-center text-slate-400 text-sm">
               <span class="material-symbols-outlined text-3xl text-slate-300 mb-1">newspaper</span>
-              <p class="font-bold text-slate-600">Nenhum boletim recente</p>
-              <p class="text-xs text-slate-400 mt-0.5">Adicione o PDF do BCA na pasta /bca para visualização automática.</p>
+              <p class="font-bold text-slate-600">Aguardando Boletim</p>
+              <p class="text-xs text-slate-400 mt-0.5">${data.message || 'Conectando ao SISBCA (CENDOC)...'}</p>
             </div>
           `;
         }
       } catch (err) {
-        console.warn('Erro ao carregar notícias do BCA:', err);
+        console.warn('Erro ao carregar citações do BCA:', err);
       }
     }
 

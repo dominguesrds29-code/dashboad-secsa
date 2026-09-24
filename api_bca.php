@@ -1,6 +1,7 @@
 <?php
 // api_bca.php
-// Endpoint para leitura 100% dinâmica de Boletins da Aeronáutica (.pdf) na pasta /bca e geração de notícias no estilo NotebookLM (Tema com emoji, MANCHETE e Linha de Apoio)
+// Endpoint para busca de ocorrências no Boletim da Aeronáutica (BCA)
+// Filtra automaticamente por SARAM e Nome do efetivo cadastrado no banco de dados (efetivosj) e pelo termo DTCEA-SJ
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -8,13 +9,37 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 
 date_default_timezone_set('America/Sao_Paulo');
 
+// 1. Função auxiliar para carregar .env do ctr_efetivo
+function carregarEnv($caminho) {
+    if (!file_exists($caminho)) return;
+    $linhas = file($caminho, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($linhas as $linha) {
+        if (strpos(trim($linha), '#') === 0) continue;
+        $partes = explode('=', $linha, 2);
+        if (count($partes) === 2) {
+            $nome = trim($partes[0]);
+            $valor = trim(trim($partes[1]), "\"'");
+            putenv("$nome=$valor");
+            $_ENV[$nome] = $valor;
+        }
+    }
+}
+
+carregarEnv(__DIR__ . '/../ctr_efetivo/public/.env');
+
+$db_host = getenv('DB_HOST') ?: '127.0.0.1';
+$db_port = getenv('DB_PORT') ?: '3306';
+$db_name = getenv('DB_DATABASE') ?: 'efetivosj';
+$db_user = getenv('DB_USERNAME') ?: 'root';
+$db_pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : '';
+
+// 2. Extração de texto de PDF nativo com descompressão FlateDecode
 function extractTextFromPdfContent($content) {
     $text = "";
     if (preg_match_all('/stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $matches)) {
         foreach ($matches[1] as $stream) {
             $uncompressed = @gzuncompress($stream);
             if ($uncompressed !== false) {
-                // Decodifica sequências octais (\343 = ã, \351 = é, etc.)
                 $uncompressed = preg_replace_callback('/\\\\([0-7]{1,3})/', function($m) {
                     return chr(octdec($m[1]));
                 }, $uncompressed);
@@ -30,6 +55,11 @@ function extractTextFromPdfContent($content) {
                     }
                     $text .= "\n";
                 }
+            } else {
+                // Caso o stream não esteja comprimido
+                if (preg_match_all('/\((.*?)\)\s*Tj/s', $stream, $tMatches)) {
+                    $text .= implode(' ', $tMatches[1]) . "\n";
+                }
             }
         }
     }
@@ -37,188 +67,29 @@ function extractTextFromPdfContent($content) {
     $text = mb_convert_encoding($text, 'UTF-8', 'ISO-8859-1');
     $text = str_replace(['\\(', '\\)', '\\-'], ['(', ')', '-'], $text);
     $text = str_replace('\\', '', $text);
-    $text = preg_replace('/\(FAB\s*/iu', '(FAB) ', $text);
     $text = preg_replace('/\s+/', ' ', $text);
     return $text;
 }
 
-function sintetizarAtoJornalistico($textoAto, $bcaNumero, $bcaData) {
-    $textoAto = trim($textoAto);
-    $textoAto = preg_replace('/Fl\.\s*n[ºo\?\s]*.*?15[0-9]{3}/iu', ' ', $textoAto);
-    $textoAto = preg_replace('/\(Continuação.*?\)/iu', ' ', $textoAto);
-    $textoAto = trim(preg_replace('/\s+/', ' ', $textoAto));
-
-    if (mb_strlen($textoAto) < 55) return null;
-
-    $tema = null;
-    $manchete = null;
-
-    // 1. DIPLOMACIA & MISSÕES NO EXTERIOR (PLAMTAX / Afastamento / Apoio Presidencial)
-    if (preg_match('/(?:AUTORIZAR\s+o\s+afastamento\s+do\s+pa[íi]s|viagem\s+ao\s+exterior|PLAMTAX|missão\s+no\s+exterior)/iu', $textoAto)) {
-        $tema = '🌐 DIPLOMACIA E MISSÕES NO EXTERIOR';
-        
-        $destino = 'no exterior';
-        if (preg_match('/(Nova Iorque|Washington|Pereira|Colômbia|Marrocos|Marrakech|Santiago|Chile|Paris|França|Lisboa|Portugal|Roma|Itália|Madri|Espanha|Londres|Inglaterra|Alemanha|Suécia)/iu', $textoAto, $mDest)) {
-            $destino = "em {$mDest[1]}";
-        }
-
-        if (stripos($textoAto, 'Presidência da República') !== false) {
-            $manchete = "Aeronáutica mobiliza militares para apoio à Presidência da República {$destino}";
-        } elseif (preg_match('/(?:para|a fim de)\s+([a-záéíóúâêôãõç\s\-]{8,60}?)(?:,|\.|\(|$)/iu', $textoAto, $mFin)) {
-            $manchete = "Autorizado afastamento do país de militares para " . trim($mFin[1]);
-        } else {
-            $manchete = "Comando da Aeronáutica autoriza missão e afastamento oficial do país {$destino}";
-        }
-    }
-    // 2. ATOS DO GABAER / COMANDANTE
-    elseif (preg_match('/PORTARIA\s+GABAER\s*(?:N[ºO\?\s]*([0-9\/\-A-Z]+))?/iu', $textoAto, $mGabaer)) {
-        $tema = '🏛️ ATOS DO COMANDANTE DA AERONÁUTICA';
-        $num = !empty($mGabaer[1]) ? "Nº " . trim($mGabaer[1]) : "";
-        $manchete = "Gabinete do Comandante expede Portaria GABAER {$num} com diretrizes oficiais";
-    }
-    // 3. SAÚDE OPERACIONAL / DIRSA / HOSPITAL / PERÍCIAS
-    elseif (preg_match('/\b(DIRSA|Saúde|Hospital|Junta de Saúde|Inspeção de Saúde|NSCA 160)\b/iu', $textoAto)) {
-        $tema = '🏥 SAÚDE OPERACIONAL E ASSISTÊNCIA';
-        $manchete = "Diretoria de Saúde atualiza normas assistenciais e juntas periciais da Aeronáutica";
-    }
-    // 4. SISCEAB / DECEA / CINDACTA / DTCEA
-    elseif (preg_match('/\b(DECEA|CINDACTA|DTCEA|CGNA|SRPV|SISCEAB)\b/iu', $textoAto)) {
-        $tema = '📡 CONTROLE DO ESPAÇO AÉREO E SISCEAB';
-        $manchete = "DECEA e organizações do SISCEAB publicam atos de prontidão operacional";
-    }
-    // 5. DCTA / ITA / SJC
-    elseif (preg_match('/\b(DCTA|ITA|IAE|IEAv|IFI|GAP-SJ|DTCEA-SJ|São José dos Campos)\b/iu', $textoAto)) {
-        $tema = '🔬 CIÊNCIA, TECNOLOGIA E GUARNIÇÃO SJ';
-        $manchete = "Atos administrativos de interesse do DCTA e da Guarnição de São José dos Campos";
-    }
-    // 6. DESIGNAÇÕES & REESTRUTURAÇÃO DE COMANDO
-    elseif (preg_match('/DESIGNAR\s+(?:o|a|os|as)?\s*([A-Za-zÀ-ÿ\s\-\(\)\/\d]+?)\s+para\s+(?:a|o)?\s*(?:função|cargo|exercer|compor|missão)\s*(?:de\s+)?([^,;\.\n]+)/iu', $textoAto, $mDesig)) {
-        $tema = '🛡️ REESTRUTURAÇÃO E QUADRO DE PESSOAL';
-        $funcao = trim($mDesig[2]);
-
-        $setor = '';
-        if (preg_match('/(?:da|do|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç\s\-]+?(?:Subchefia|Chefia|Gabinete|Diretoria|Centro|Comando|Base|Esquadrão|Instituto|Departamento)[A-Za-zÀ-ÿ\s\-]*)/u', $textoAto, $mSetor)) {
-            $setor = ' na ' . trim($mSetor[1]);
-        }
-        $manchete = "Designação de militar para exercer função de {$funcao}{$setor}";
-    }
-    // 7. ENSINO & CURSOS
-    elseif (preg_match('/\b(Curso|Matr[íi]cula|Aproveitamento|Conclus[ãa]o|Estágio|EEAR|AFA|EPCAR|CIAAR)\b/iu', $textoAto)) {
-        $tema = '🎓 ENSINO, FORMAÇÃO E CAPACITAÇÃO';
-        $manchete = "Comando da Aeronáutica homologa atos regulamentares de cursos e estágios";
-    }
-    // 8. CONCESSÕES & HONRARIAS
-    elseif (preg_match('/\b(CONCEDER|Medalha|Elogio|Láurea|Menção)\b/iu', $textoAto)) {
-        $tema = '🎖️ CONCESSÕES E MÉRITO MILITAR';
-        $manchete = "Comando da Aeronáutica concede honrarias e medalhas regulamentares ao efetivo";
-    }
-    // 9. INTEGRAÇÃO & MINISTÉRIO DA DEFESA
-    elseif (preg_match('/(Marinha|Exército|Ministério da Defesa|EMCFA|Interforças)/iu', $textoAto)) {
-        $tema = '🪖 INTEGRAÇÃO DAS FORÇAS ARMADAS';
-        $manchete = "Ações conjuntas fortalecem a cooperação entre a Aeronáutica e o Ministério da Defesa";
-    }
-    // 10. PORTARIAS GERAIS COM CONTEÚDO
-    elseif (preg_match('/PORTARIA\s+([A-Z0-9\-\/]+)\s*N[ºO\?\s]*([0-9\.\/]+)/iu', $textoAto, $mPort)) {
-        $tema = '📋 DIRETRIZES E PORTARIAS OFICIAIS';
-        $manchete = "Publicada Portaria {$mPort[1]} Nº {$mPort[2]} com atos normativos no Boletim da Aeronáutica";
-    }
-    else {
-        return null;
-    }
-
-    // Linha de Apoio Inteligente: Síntese executiva em 1 frase elegante
-    $linhaApoio = '';
-
-    if (stripos($tema, 'DIPLOMACIA') !== false || stripos($tema, 'EXTERIOR') !== false) {
-        $militar = '';
-        if (preg_match('/(?:do|da|ao|à)\s+((?:General|Brigadeiro|Coronel|Tenente-Coronel|Major|Capitão|Tenente|Sargento|Cabo)[A-Za-zÀ-ÿ\s\(\)]+?)(?:,|\.|\s+para|\s+do|\s+da)/u', $textoAto, $mMil)) {
-            $militar = trim($mMil[1]);
-        }
-        $destino = '';
-        if (preg_match('/(Nova Iorque|Washington|Pereira|Colômbia|Marrocos|Marrakech|Santiago|Chile|Paris|França|Lisboa|Portugal|Roma|Itália|Madri|Espanha|Londres|Inglaterra)/iu', $textoAto, $mDest)) {
-            $destino = ' em ' . trim($mDest[1]);
-        }
-        if (stripos($textoAto, 'Presidência da República') !== false) {
-            $linhaApoio = "Militares designados pelo Comando prestarão apoio à comitiva presidencial durante compromissos oficiais{$destino}.";
-        } elseif ($militar) {
-            $linhaApoio = "A autorização contempla {$militar} para cumprimento de missão oficial e representação institucional{$destino}.";
-        } else {
-            $linhaApoio = "Militares da Força Aérea Brasileira foram designados para cumprir missão de intercâmbio e cooperação{$destino}.";
-        }
-    } elseif (stripos($tema, 'REESTRUTURAÇÃO') !== false || stripos($tema, 'PESSOAL') !== false) {
-        $militar = '';
-        if (preg_match('/DESIGNAR\s+(?:o|a|os|as)?\s*([A-Za-zÀ-ÿ\s\-\(\)\/\d]+?)\s+para/iu', $textoAto, $mMil)) {
-            $militar = trim($mMil[1]);
-        }
-        $funcao = '';
-        if (preg_match('/função\s+de\s+([A-Za-zÀ-ÿ\s\-]+?)(?:,|\.|\s+código|\s+da|\s+do)/iu', $textoAto, $mFunc)) {
-            $funcao = 'de ' . trim($mFunc[1]);
-        }
-        $setor = '';
-        if (preg_match('/(?:da|do|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç\s\-]+?(?:Subchefia|Chefia|Gabinete|Diretoria|Centro|Comando|Base|Esquadrão|Instituto|Departamento)[A-Za-zÀ-ÿ\s\-]*)/u', $textoAto, $mSetor)) {
-            $setor = ' na ' . trim($mSetor[1]);
-        }
-        if ($militar && $funcao) {
-            $linhaApoio = "O ato oficial nomeia {$militar} para exercer a função {$funcao}{$setor}.";
-        } elseif ($funcao) {
-            $linhaApoio = "A publicação formaliza a designação para a função {$funcao}{$setor} na estrutura organizacional.";
-        } else {
-            $linhaApoio = "A portaria define novas atribuições e movimentações estratégicas no quadro de pessoal da Força.";
-        }
-    } elseif (stripos($tema, 'GUARNIÇÃO SJ') !== false || stripos($tema, 'CIÊNCIA') !== false) {
-        if (preg_match('/Programa de Gestão/iu', $textoAto)) {
-            $linhaApoio = "A instrução aprovada pela Direção-Geral do DCTA regulamenta as novas diretrizes do Programa de Gestão e Desempenho no campus.";
-        } elseif (preg_match('/(IFI|IEAv|IAE|ITA|GAP-SJ|DTCEA-SJ)/iu', $textoAto, $mOrg)) {
-            $sigla = strtoupper(trim($mOrg[1]));
-            $linhaApoio = "A publicação oficial contempla diretrizes administrativas e atos de gestão voltados ao {$sigla} em São José dos Campos.";
-        } else {
-            $linhaApoio = "Normativas e resoluções administrativas atualizam procedimentos técnicos e de gestão na Guarnição de São José dos Campos.";
-        }
-    } elseif (stripos($tema, 'COMANDANTE') !== false || stripos($tema, 'GABAER') !== false) {
-        $linhaApoio = "O Comandante da Aeronáutica homologou decisões normativas e atos de pessoal com vigência imediata para as Organizações Militares.";
-    } elseif (stripos($tema, 'SAÚDE') !== false) {
-        $linhaApoio = "A Diretoria de Saúde padroniza diretrizes técnicas, rotinas periciais e procedimentos hospitalares no Sistema de Saúde da Aeronáutica.";
-    } elseif (stripos($tema, 'ESPAÇO AÉREO') !== false || stripos($tema, 'SISCEAB') !== false) {
-        $linhaApoio = "Instruções técnicas emitidas pelo DECEA reforçam a operacionalidade, radiocomunicação e prontidão dos Destacamentos de Controle.";
-    } elseif (stripos($tema, 'ENSINO') !== false || stripos($tema, 'CAPACITAÇÃO') !== false) {
-        if (preg_match('/Curso de ([A-Za-zÀ-ÿ\s\-]+?)(?:,|\.|\(|\s+a ser)/iu', $textoAto, $mCur)) {
-            $linhaApoio = "A publicação oficial autoriza a matrícula de militares no Curso de " . trim($mCur[1]) . " para capacitação continuada.";
-        } else {
-            $linhaApoio = "O ato oficial homologa matrículas e etapas de capacitação técnica para o contínuo aperfeiçoamento do efetivo.";
-        }
-    } elseif (stripos($tema, 'INTEGRAÇÃO') !== false || stripos($tema, 'DEFESA') !== false) {
-        if (preg_match('/Segurança Cibernética|NSCA 7-22/iu', $textoAto)) {
-            $linhaApoio = "A norma atualiza os procedimentos obrigatórios para comunicação e acompanhamento de eventos de segurança cibernética no COMAER.";
-        } else {
-            $linhaApoio = "Medidas conjuntas entre a Aeronáutica e o Ministério da Defesa ampliam a sinergia institucional e a governança operacional.";
-        }
-    } else {
-        // Fallback dinâmico com extração da primeira frase substancial
-        $textoLimpo = preg_replace('/^(?:PORTARIA|AUTORIZAR|DESIGNAR|CONCEDER|O\s+COMANDANTE|O\s+CHEFE|A\s+SECRETÁRIA).*?resolve:\s*/iu', '', $textoAto);
-        $textoLimpo = trim(preg_replace('/\s+/', ' ', $textoLimpo));
-        if (mb_strlen($textoLimpo) > 170) {
-            $corte = mb_substr($textoLimpo, 0, 170);
-            $ponto = max(mb_strrpos($corte, '.'), mb_strrpos($corte, ';'));
-            if ($ponto !== false && $ponto > 60) {
-                $linhaApoio = trim(mb_substr($corte, 0, $ponto + 1));
-            } else {
-                $linhaApoio = trim($corte) . '.';
-            }
-        } else {
-            $linhaApoio = $textoLimpo;
-        }
-    }
-
-    if (mb_strlen($linhaApoio) < 25) return null;
-
-    return [
-        'tema' => $tema,
-        'manchete' => $manchete,
-        'linha_apoio' => $linhaApoio
+// 3. Normalização de texto sem acentos para busca insensível
+function normalizarTextoBusca($str) {
+    if (!$str) return '';
+    $str = mb_strtoupper($str, 'UTF-8');
+    $map = [
+        'Á'=>'A','À'=>'A','Ã'=>'A','Â'=>'A','Ä'=>'A',
+        'É'=>'E','È'=>'E','Ê'=>'E','Ë'=>'E',
+        'Í'=>'I','Ì'=>'I','Î'=>'I','Ï'=>'I',
+        'Ó'=>'O','Ò'=>'O','Õ'=>'O','Ô'=>'O','Ö'=>'O',
+        'Ú'=>'U','Ù'=>'U','Û'=>'U','Ü'=>'U',
+        'Ç'=>'C','Ñ'=>'N'
     ];
+    $str = strtr($str, $map);
+    $str = preg_replace('/[^A-Z0-9\s\-_]/', ' ', $str);
+    return trim(preg_replace('/\s+/', ' ', $str));
 }
 
-function downloadHttp($url, $timeout = 6) {
+// 4. Download HTTP resiliente
+function downloadHttp($url, $timeout = 7) {
     $data = false;
     $httpCode = 0;
     $errorMsg = '';
@@ -230,7 +101,7 @@ function downloadHttp($url, $timeout = 6) {
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Monitor');
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         $data = curl_exec($ch);
@@ -246,197 +117,196 @@ function downloadHttp($url, $timeout = 6) {
     $ctx = stream_context_create([
         'http' => [
             'timeout' => $timeout,
-            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader',
+            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Monitor',
             'ignore_errors' => true
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false
         ]
     ]);
-    $fgData = @file_get_contents($url, false, $ctx);
-    if ($fgData !== false && strlen($fgData) > 0) {
-        return ['success' => true, 'code' => 200, 'data' => $fgData, 'error' => ''];
+    
+    $data = @file_get_contents($url, false, $ctx);
+    if ($data !== false && strlen($data) > 0) {
+        return ['success' => true, 'code' => 200, 'data' => $data, 'error' => ''];
     }
 
-    return ['success' => false, 'code' => $httpCode, 'data' => null, 'error' => $errorMsg ?: 'Falha na conexão HTTP'];
+    return ['success' => false, 'code' => $httpCode, 'data' => null, 'error' => $errorMsg ?: 'Falha na conexão'];
 }
 
-function sincronizarUltimoBcaCendoc($bcaDir) {
-    $candidateUrls = [
+// 5. Diretórios permitidos para gravação e leitura de PDFs (Exclusivamente /tmp, downloads e temp do sistema)
+function getBcaDirectories() {
+    $dirs = [];
+    
+    // 1. Diretório /tmp padrão do Linux
+    if (is_dir('/tmp')) {
+        $dirs[] = '/tmp';
+    }
+    
+    // 2. Diretório Downloads do usuário (Linux / Windows)
+    $home = getenv('HOME') ?: getenv('USERPROFILE');
+    if ($home && is_dir($home . '/Downloads')) {
+        $dirs[] = $home . '/Downloads';
+    }
+    
+    // 3. Diretório temporário do sistema operacional
+    $sysTemp = sys_get_temp_dir();
+    if ($sysTemp && is_dir($sysTemp)) {
+        $dirs[] = rtrim($sysTemp, '/\\');
+    }
+
+    return array_unique($dirs);
+}
+
+// 6. Sincronização com o SISBCA (CENDOC)
+function sincronizarUltimoBcaCendoc() {
+    $baseUrl = 'http://www.cendoc.intraer/sisbca/';
+    $urlsParaTentar = [
         'http://www.cendoc.intraer/sisbca/',
         'http://www.cendoc.intraer/sisbca/index.php',
         'http://cendoc.intraer/sisbca/',
         'http://cendoc.intraer/sisbca/index.php'
     ];
 
-    $info = [
-        'tentou_download' => false,
-        'sucesso' => false,
-        'mensagem' => '',
-        'url_acessada' => null,
-        'bca_numero' => null,
-        'bca_data' => null,
-        'pdf_arquivo' => null,
-        'tentativas' => []
-    ];
+    $logTentativas = [];
+    $htmlCendoc = null;
+    $urlSucesso = null;
 
-    $html = null;
-    $baseUrlUsada = 'http://www.cendoc.intraer/sisbca/';
-
-    foreach ($candidateUrls as $url) {
-        $res = downloadHttp($url, 5);
-        $info['tentativas'][] = ['url' => $url, 'code' => $res['code'], 'success' => $res['success'], 'error' => $res['error']];
-        if ($res['success'] && !empty($res['data']) && strlen($res['data']) > 200) {
-            $html = $res['data'];
-            $baseUrlUsada = $url;
-            $info['url_acessada'] = $url;
+    foreach ($urlsParaTentar as $u) {
+        $res = downloadHttp($u, 5);
+        $logTentativas[] = [
+            'url' => $u,
+            'code' => $res['code'],
+            'success' => $res['success'],
+            'error' => $res['error']
+        ];
+        if ($res['success'] && !empty($res['data'])) {
+            $htmlCendoc = $res['data'];
+            $urlSucesso = $u;
             break;
         }
     }
 
-    if (!$html) {
-        $info['mensagem'] = 'Sem conexão com os servidores SISBCA (CENDOC). Usando cache local.';
-        return $info;
+    if (!$htmlCendoc) {
+        return [
+            'tentou_download' => false,
+            'sucesso' => false,
+            'mensagem' => 'Sem conexão com os servidores SISBCA (CENDOC). Usando cache local.',
+            'url_acessada' => null,
+            'bca_numero' => null,
+            'bca_data' => null,
+            'pdf_arquivo' => null,
+            'tentativas' => $logTentativas
+        ];
     }
 
-    $info['tentou_download'] = true;
+    $bcaNumero = null;
+    $bcaData = null;
+    $bcaPdfHref = null;
 
-    // Regex ultra flexível para capturar o Último Boletim Ostensivo do CENDOC
-    // Exemplo: <h3>- Último Boletim Ostensivo:</h3><p><b>BCA nº.: 163 de 24-09-2026</b> ... <a href='bca_pdf/2026/bca_163_24-09-2026.pdf'
-    $pattern = '/(?:[ÚU\xC3\xDA]|&Uacute;)?ltimo\s+Boletim\s+Ostensivo.*?BCA\s*n[ºo\?\.\s:]*([0-9]+)\s+de\s+([0-9]{1,2}[_\-\/][0-9]{1,2}[_\-\/][0-9]{2,4}).*?href=[\'"]([^\'"]+?)[\'"]/is';
-
-    if (preg_match($pattern, $html, $matches)) {
-        $nr = trim($matches[1]);
-        $dataRaw = trim($matches[2]);
-        $pdfRelPath = trim($matches[3]);
-
-        $info['bca_numero'] = $nr;
-        $info['bca_data'] = str_replace('-', '/', $dataRaw);
-
-        // Identifica ano
-        $ano = date('Y');
-        if (preg_match('/20[0-9]{2}/', $dataRaw, $mAno)) {
-            $ano = $mAno[0];
+    if (preg_match('/(?:[ÚU\xC3\xDA]|&Uacute;)?ltimo\s+Boletim\s+Ostensivo.*?BCA\s*n[ºo\?\.\s:]*([0-9]+)\s+de\s+([0-9]{1,2}[_\-\/][0-9]{1,2}[_\-\/][0-9]{2,4}).*?href=[\'"]([^\'"]+?)[\'"]/is', $htmlCendoc, $m)) {
+        $bcaNumero = trim($m[1]);
+        $bcaData = trim(str_replace('_', '/', $m[2]));
+        $bcaPdfHref = trim($m[3]);
+    } elseif (preg_match('/bca[_\-\s]*([0-9]+)[_\-\s]*([0-9]{2}[_\-\/][0-9]{2}[_\-\/][0-9]{4})\.pdf/i', $htmlCendoc, $m)) {
+        $bcaNumero = trim($m[1]);
+        $bcaData = trim(str_replace('_', '/', $m[2]));
+        if (preg_match('/href=[\'"]([^\'"]*?' . preg_quote($m[0], '/') . ')[\'"]/i', $htmlCendoc, $mHref)) {
+            $bcaPdfHref = $mHref[1];
         }
+    }
 
-        // Monta URLs candidatas para baixar o arquivo PDF direto
-        $urlsDownload = [];
-        if (preg_match('/^https?:\/\//i', $pdfRelPath)) {
-            $urlsDownload[] = $pdfRelPath;
-        } else {
-            $baseDomain = rtrim(preg_replace('/\/[^\/]*$/', '', $baseUrlUsada), '/');
-            $urlsDownload[] = $baseDomain . '/' . ltrim($pdfRelPath, '/');
-            $urlsDownload[] = "http://www.cendoc.intraer/sisbca/bca_pdf/{$ano}/bca_{$nr}_{$dataRaw}.pdf";
-            $urlsDownload[] = "http://cendoc.intraer/sisbca/bca_pdf/{$ano}/bca_{$nr}_{$dataRaw}.pdf";
-        }
+    if (!$bcaPdfHref) {
+        $anoAtual = date('Y');
+        $bcaPdfHref = "bca_pdf/{$anoAtual}/bca_{$bcaNumero}_" . str_replace('/', '-', $bcaData) . ".pdf";
+    }
 
-        $nomeArquivo = "bca_{$nr}_{$dataRaw}.pdf";
-        
-        // Tenta salvar em todos os diretórios possíveis (local e /tmp)
-        $diretoriosGravacao = getBcaDirectories();
-        $salvoEmAlgumLugar = false;
-        $locaisSalvos = [];
-
-        // Se o arquivo ainda não existe ou está vazio
-        $precisaBaixar = true;
-        foreach ($diretoriosGravacao as $dir) {
-            $dest = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $nomeArquivo;
-            if (file_exists($dest) && filesize($dest) > 2000) {
-                $precisaBaixar = false;
-                $info['sucesso'] = true;
-                $info['mensagem'] = "BCA nº {$nr} de {$info['bca_data']} já está salvo no cache ({$dest}).";
-                $info['pdf_arquivo'] = $nomeArquivo;
-                $info['caminho_completo'] = $dest;
-                break;
-            }
-        }
-
-        if ($precisaBaixar) {
-            $pdfBaixado = false;
-            foreach ($urlsDownload as $pdfUrl) {
-                $resPdf = downloadHttp($pdfUrl, 10);
-                if ($resPdf['success'] && !empty($resPdf['data']) && strlen($resPdf['data']) > 2000) {
-                    $conteudoBytes = $resPdf['data'];
-                    $info['pdf_conteudo_memoria'] = $conteudoBytes;
-                    $info['pdf_arquivo'] = $nomeArquivo;
-
-                    // Salva em todos os diretórios disponíveis (local e /tmp)
-                    foreach ($diretoriosGravacao as $dir) {
-                        @chmod($dir, 0777);
-                        $dest = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $nomeArquivo;
-                        $bw = @file_put_contents($dest, $conteudoBytes);
-                        if ($bw !== false && $bw > 2000) {
-                            $salvoEmAlgumLugar = true;
-                            $locaisSalvos[] = $dest;
-                            if (empty($info['caminho_completo'])) {
-                                $info['caminho_completo'] = $dest;
-                            }
-                        }
-                    }
-
-                    $info['sucesso'] = true;
-                    if ($salvoEmAlgumLugar) {
-                        $info['mensagem'] = "BCA nº {$nr} baixado e salvo em: " . implode(' | ', $locaisSalvos);
-                    } else {
-                        $info['mensagem'] = "BCA nº {$nr} baixado da rede e processado diretamente em memória.";
-                    }
-
-                    $pdfBaixado = true;
-                    break;
-                }
-            }
-
-            if (!$pdfBaixado) {
-                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível concluir o download do PDF da rede.";
-            }
-        }
+    if (!preg_match('/^https?:\/\//i', $bcaPdfHref)) {
+        $pdfUrl = rtrim($baseUrl, '/') . '/' . ltrim($bcaPdfHref, '/');
     } else {
-        $info['mensagem'] = 'Conectado ao CENDOC, mas o padrão do Último Boletim não foi localizado no HTML.';
+        $pdfUrl = $bcaPdfHref;
     }
 
-    return $info;
-}
+    $pdfFileName = basename(parse_url($pdfUrl, PHP_URL_PATH));
+    if (!$pdfFileName || substr($pdfFileName, -4) !== '.pdf') {
+        $pdfFileName = "bca_{$bcaNumero}_" . str_replace('/', '-', $bcaData) . ".pdf";
+    }
 
-function getBcaDirectories() {
-    $dirs = [];
+    $dirs = getBcaDirectories();
     
-    // 1. Diretório local do projeto
-    $localDir = __DIR__ . DIRECTORY_SEPARATOR . 'bca';
-    if (!is_dir($localDir)) @mkdir($localDir, 0777, true);
-    @chmod($localDir, 0777);
-    $dirs[] = $localDir;
-
-    // 2. Diretório temporário do sistema (/tmp no Linux ou Temp no Windows)
-    $tmpSysDir = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'bca_intraer';
-    if (!is_dir($tmpSysDir)) @mkdir($tmpSysDir, 0777, true);
-    @chmod($tmpSysDir, 0777);
-    $dirs[] = $tmpSysDir;
-
-    // 3. /tmp explícito (se estiver em ambiente Linux/Unix)
-    if (DIRECTORY_SEPARATOR === '/' && is_dir('/tmp')) {
-        $tmpLinuxDir = '/tmp/bca_intraer';
-        if (!is_dir($tmpLinuxDir)) @mkdir($tmpLinuxDir, 0777, true);
-        @chmod($tmpLinuxDir, 0777);
-        $dirs[] = $tmpLinuxDir;
+    // Verifica se o arquivo já existe em algum dos diretórios
+    foreach ($dirs as $d) {
+        $pathVerificar = rtrim($d, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
+        if (file_exists($pathVerificar) && filesize($pathVerificar) > 50000) {
+            return [
+                'tentou_download' => true,
+                'sucesso' => true,
+                'mensagem' => "BCA nº {$bcaNumero} já baixado em {$pathVerificar}",
+                'url_acessada' => $urlSucesso,
+                'bca_numero' => $bcaNumero,
+                'bca_data' => $bcaData,
+                'pdf_arquivo' => $pdfFileName,
+                'caminho_completo' => $pathVerificar,
+                'tentativas' => $logTentativas
+            ];
+        }
     }
 
-    return array_unique($dirs);
+    // Realiza o download do PDF
+    $resPdf = downloadHttp($pdfUrl, 15);
+    if (!$resPdf['success'] || strlen($resPdf['data']) < 50000) {
+        return [
+            'tentou_download' => true,
+            'sucesso' => false,
+            'mensagem' => "Falha ao baixar PDF do BCA em {$pdfUrl}: " . $resPdf['error'],
+            'url_acessada' => $pdfUrl,
+            'bca_numero' => $bcaNumero,
+            'bca_data' => $bcaData,
+            'pdf_arquivo' => $pdfFileName,
+            'tentativas' => $logTentativas
+        ];
+    }
+
+    // Salva diretamente na raiz de /tmp ou nos diretórios configurados
+    $gravouEm = null;
+    foreach ($dirs as $d) {
+        $caminhoSalvar = rtrim($d, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
+        $saved = @file_put_contents($caminhoSalvar, $resPdf['data']);
+        if ($saved !== false) {
+            @chmod($caminhoSalvar, 0777);
+            $gravouEm = $caminhoSalvar;
+            break;
+        }
+    }
+
+    return [
+        'tentou_download' => true,
+        'sucesso' => true,
+        'mensagem' => "BCA nº {$bcaNumero} baixado com sucesso!",
+        'url_acessada' => $pdfUrl,
+        'bca_numero' => $bcaNumero,
+        'bca_data' => $bcaData,
+        'pdf_arquivo' => $pdfFileName,
+        'caminho_completo' => $gravouEm,
+        'pdf_conteudo_memoria' => $resPdf['data'],
+        'tentativas' => $logTentativas
+    ];
 }
 
-// 1. Tenta sincronizar e baixar o último boletim oficial do CENDOC SISBCA
-$syncCendoc = sincronizarUltimoBcaCendoc(__DIR__ . '/bca');
+// Executa sincronização com o CENDOC
+$syncCendoc = sincronizarUltimoBcaCendoc();
 
-clearstatcache();
-
-// 2. Localiza todos os arquivos PDF (em bca/ e em /tmp)
+// 7. Busca o PDF mais recente disponível
 $allDirs = getBcaDirectories();
 $files = [];
 foreach ($allDirs as $d) {
-    $encontrados = glob(rtrim($d, '/\\') . '/*.pdf');
+    $encontrados = glob(rtrim($d, '/\\') . DIRECTORY_SEPARATOR . 'bca_*.pdf');
     if (!empty($encontrados)) {
         $files = array_merge($files, $encontrados);
     }
 }
 $files = array_unique($files);
 
-// 3. Determina o conteúdo do PDF (Memória direta, Caminho Confirmado ou Disco)
 $pdfContent = null;
 $latestPdfNome = 'bca_desconhecido.pdf';
 
@@ -447,7 +317,6 @@ if (!empty($syncCendoc['pdf_conteudo_memoria'])) {
     $pdfContent = file_get_contents($syncCendoc['caminho_completo']);
     $latestPdfNome = basename($syncCendoc['caminho_completo']);
 } elseif (!empty($files)) {
-    // Ordena pelo maior número de BCA
     usort($files, function($a, $b) {
         $numA = 0;
         $numB = 0;
@@ -465,20 +334,17 @@ if (!empty($syncCendoc['pdf_conteudo_memoria'])) {
 if (!$pdfContent) {
     echo json_encode([
         'success' => false,
-        'message' => 'Nenhum boletim PDF encontrado na pasta bca/, /tmp e CENDOC inacessível',
+        'message' => 'Nenhum boletim PDF encontrado em /tmp e SISBCA indisponível.',
         'sync_cendoc' => $syncCendoc,
-        'noticias' => [
-            [
-                'tema' => '📄 PUBLICOU NO BCA',
-                'manchete' => 'Aguardando publicação oficial do BCA',
-                'linha_apoio' => 'Conectando ao SISBCA (CENDOC) para baixar o último Boletim Ostensivo automaticamente.'
-            ]
-        ]
+        'ocorrencias' => [],
+        'total_ocorrencias' => 0
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
 }
 
-$pdfText = extractTextFromPdfContent($pdfContent);
+// Extrai texto bruto e texto normalizado do PDF
+$pdfTextBruto = extractTextFromPdfContent($pdfContent);
+$pdfTextNorm = normalizarTextoBusca($pdfTextBruto);
 
 // Identifica Número do BCA e Data
 $bcaNumero = '';
@@ -488,7 +354,7 @@ if (!empty($syncCendoc['bca_numero'])) {
     $bcaNumero = $syncCendoc['bca_numero'];
 } elseif (preg_match('/bca[_\-\s]*([0-9]+)/i', $latestPdfNome, $mNum)) {
     $bcaNumero = $mNum[1];
-} elseif (preg_match('/BOLETIM DO COMANDO DA AERON[AÁ]UTICA N[ºO\?\s]*([0-9]+)/iu', $pdfText, $mNum)) {
+} elseif (preg_match('/BOLETIM DO COMANDO DA AERON[AÁ]UTICA N[ºO\?\s]*([0-9]+)/iu', $pdfTextBruto, $mNum)) {
     $bcaNumero = $mNum[1];
 }
 
@@ -496,46 +362,184 @@ if (!empty($syncCendoc['bca_data'])) {
     $bcaData = $syncCendoc['bca_data'];
 } elseif (preg_match('/([0-9]{2})[_\-]([0-9]{2})[_\-](20[0-9]{2})/', $latestPdfNome, $mDate)) {
     $bcaData = "{$mDate[1]}/{$mDate[2]}/{$mDate[3]}";
-} elseif (preg_match('/([0-9]{1,2}\s+de\s+[a-zç]+\s+de\s+20[0-9]{2})/iu', $pdfText, $mDate)) {
+} elseif (preg_match('/([0-9]{1,2}\s+de\s+[a-zç]+\s+de\s+20[0-9]{2})/iu', $pdfTextBruto, $mDate)) {
     $bcaData = trim($mDate[1]);
 }
 
-// Divide o PDF em blocos de atos
-$blocos = preg_split('/(?=(?:PORTARIA|AUTORIZAR\s+o\s+afastamento|DESIGNAR\s+(?:o|a|os|as)|CONCEDER\s+(?:ao|à|aos|às)|DESPACHO)\b)/iu', $pdfText);
+// 8. Consulta militares ativos no banco de dados para criar chaves de busca
+$militaresMonitorados = [];
+try {
+    $db = new PDO("mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-$noticias = [];
-$temasContabilizados = [];
-$hashes = [];
+    $secTable = 'sections';
+    $secCol = 'name';
+    $tables = $db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+    if (in_array('sections', $tables)) {
+        $secTable = 'sections';
+    } elseif (in_array('secoes', $tables)) {
+        $secTable = 'secoes';
+    }
+    $cols = $db->query("SHOW COLUMNS FROM `$secTable`")->fetchAll(PDO::FETCH_COLUMN);
+    if (in_array('name', $cols)) {
+        $secCol = 'name';
+    } elseif (in_array('nome', $cols)) {
+        $secCol = 'nome';
+    } elseif (in_array('sigla', $cols)) {
+        $secCol = 'sigla';
+    }
 
-// 1. Manchete Institucional do Boletim Lido
-$noticias[] = [
-    'tema' => "🔴 BOLETIM OFICIAL Nº " . ($bcaNumero ?: 'DO DIA'),
-    'manchete' => "Boletim do Comando da Aeronáutica Nº " . ($bcaNumero ?: '') . " publicado e disponível na íntegra",
-    'linha_apoio' => "Edição oficial" . ($bcaData ? " datada de {$bcaData}" : "") . " encontra-se disponível para conhecimento e cumprimento de todo o efetivo da Guarnição."
+    $stmt = $db->query("
+        SELECT 
+            u.id, u.name, u.war_name, u.grade, u.saram,
+            s.`$secCol` as secao_nome
+        FROM users u
+        LEFT JOIN `$secTable` s ON u.section_id = s.id
+        WHERE u.deleted_at IS NULL
+        ORDER BY u.name ASC
+    ");
+    $militaresMonitorados = $stmt->fetchAll();
+} catch (Exception $e) {
+    // Se o banco estiver indisponível no momento
+    $militaresMonitorados = [];
+}
+
+// 9. Processamento de ocorrências: Busca por SARAM, Nome Completo e DTCEA-SJ
+$ocorrencias = [];
+$ocorrenciasHashes = [];
+
+// Função auxiliar para extrair trecho contextual envolto ao termo encontrado
+function extrairContextoAto($pos, $textoBruto, $tamanhoContexto = 260) {
+    $inicio = max(0, $pos - 100);
+    $fim = min(strlen($textoBruto), $pos + $tamanhoContexto);
+    
+    // Tenta expandir para o início da frase/ato anterior
+    $trecho = substr($textoBruto, $inicio, $fim - $inicio);
+    $trecho = trim(preg_replace('/\s+/', ' ', $trecho));
+    
+    // Remove cabeçalhos repetitivos de paginação do BCA
+    $trecho = preg_replace('/Fl\.\s*n[ºo\?\s]*.*?15[0-9]{3}/iu', ' ', $trecho);
+    $trecho = preg_replace('/\(Continuação.*?\)/iu', ' ', $trecho);
+    return trim(preg_replace('/\s+/', ' ', $trecho));
+}
+
+// A) Busca pelo termo DTCEA-SJ e variações da Unidade
+$termosUnidade = [
+    'DTCEA-SJ',
+    'DTCEA SJ',
+    'DTCEA - SJ',
+    'DESTACAMENTO DE CONTROLE DO ESPACO AEREO DE SAO JOSE DOS CAMPOS'
 ];
 
-// 2. Itera sobre os atos reais do PDF e sintetiza manchetes variadas
-foreach ($blocos as $bloco) {
-    $item = sintetizarAtoJornalistico($bloco, $bcaNumero, $bcaData);
-    if ($item) {
-        $temaNome = $item['tema'];
+foreach ($termosUnidade as $termoU) {
+    $termoNorm = normalizarTextoBusca($termoU);
+    $offset = 0;
+    while (($pos = strpos($pdfTextNorm, $termoNorm, $offset)) !== false) {
+        $contexto = extrairContextoAto($pos, $pdfTextBruto, 280);
+        $hash = md5('UNIDADE_' . substr($contexto, 0, 80));
         
-        // Limita a 2 notícias por mesmo tema para garantir diversidade editorial de assuntos
-        if (!isset($temasContabilizados[$temaNome])) {
-            $temasContabilizados[$temaNome] = 0;
+        if (!isset($ocorrenciasHashes[$hash]) && strlen($contexto) > 20) {
+            $ocorrenciasHashes[$hash] = true;
+            $ocorrencias[] = [
+                'tipo' => 'unidade',
+                'titulo' => 'Citação Oficial do DTCEA-SJ',
+                'termo_encontrado' => $termoU,
+                'militar_nome' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS',
+                'militar_guerra' => 'DTCEA-SJ',
+                'militar_saram' => 'OM',
+                'militar_secao' => 'Comando / Efetivo',
+                'contexto' => $contexto
+            ];
         }
-        if ($temasContabilizados[$temaNome] >= 2) {
-            continue;
+        $offset = $pos + strlen($termoNorm);
+        if (count($ocorrencias) >= 20) break;
+    }
+}
+
+// B) Busca por cada militar do efetivo (SARAM e Nome Completo)
+foreach ($militaresMonitorados as $m) {
+    $nomeCompleto = trim($m['name'] ?? '');
+    $nomeGuerra = trim($m['war_name'] ?? '');
+    $grade = trim($m['grade'] ?? '');
+    $saram = trim($m['saram'] ?? '');
+    $secao = trim($m['secao_nome'] ?? 'Geral');
+
+    $nomeFormatado = trim("{$grade} " . ($nomeGuerra ?: $nomeCompleto));
+
+    // 1. Busca por SARAM (formatado ou apenas dígitos)
+    if (!empty($saram)) {
+        $saramDigitos = preg_replace('/[^0-9]/', '', $saram);
+        $saramFormatado = $saram;
+        
+        // Padrões de SARAM no PDF: com traço (393068-8), com ponto, ou dígitos diretos
+        $padroesSaram = [];
+        if (strlen($saramDigitos) >= 6) {
+            $padroesSaram[] = normalizarTextoBusca($saramFormatado);
+            $padroesSaram[] = $saramDigitos;
+            if (strlen($saramDigitos) == 7) {
+                $padroesSaram[] = substr($saramDigitos, 0, 6) . '-' . substr($saramDigitos, 6, 1);
+                $padroesSaram[] = substr($saramDigitos, 0, 6) . ' ' . substr($saramDigitos, 6, 1);
+            }
         }
 
-        $hash = md5($item['manchete'] . mb_substr($item['linha_apoio'], 0, 30));
-        if (!isset($hashes[$hash])) {
-            $hashes[$hash] = true;
-            $temasContabilizados[$temaNome]++;
-            $noticias[] = $item;
+        foreach (array_unique($padroesSaram) as $padrao) {
+            if (empty($padrao)) continue;
+            $pos = strpos($pdfTextNorm, $padrao);
+            if ($pos !== false) {
+                $contexto = extrairContextoAto($pos, $pdfTextBruto, 280);
+                $hash = md5($m['id'] . '_SARAM_' . substr($contexto, 0, 80));
+                
+                if (!isset($ocorrenciasHashes[$hash]) && strlen($contexto) > 20) {
+                    $ocorrenciasHashes[$hash] = true;
+                    $ocorrencias[] = [
+                        'tipo' => 'militar',
+                        'titulo' => "Citação do militar {$nomeFormatado}",
+                        'termo_encontrado' => "SARAM {$saram}",
+                        'militar_nome' => $nomeCompleto,
+                        'militar_guerra' => $nomeFormatado,
+                        'militar_saram' => $saram,
+                        'militar_secao' => $secao,
+                        'contexto' => $contexto
+                    ];
+                }
+                break; // Evita duplicar se casou em múltiplos formatos de SARAM
+            }
         }
     }
-    if (count($noticias) >= 14) break;
+
+    // 2. Busca por Nome Completo do militar
+    if (!empty($nomeCompleto) && mb_strlen($nomeCompleto) >= 8) {
+        $nomeNorm = normalizarTextoBusca($nomeCompleto);
+        $pos = strpos($pdfTextNorm, $nomeNorm);
+        
+        if ($pos !== false) {
+            $contexto = extrairContextoAto($pos, $pdfTextBruto, 280);
+            $hash = md5($m['id'] . '_NOME_' . substr($contexto, 0, 80));
+            
+            if (!isset($ocorrenciasHashes[$hash]) && strlen($contexto) > 20) {
+                $ocorrenciasHashes[$hash] = true;
+                $ocorrencias[] = [
+                    'tipo' => 'militar',
+                    'titulo' => "Citação do militar {$nomeFormatado}",
+                    'termo_encontrado' => $nomeCompleto,
+                    'militar_nome' => $nomeCompleto,
+                    'militar_guerra' => $nomeFormatado,
+                    'militar_saram' => $saram ?: 'Não inf.',
+                    'militar_secao' => $secao,
+                    'contexto' => $contexto
+                ];
+            }
+        }
+    }
+}
+
+// Resumo textual
+$totalOcorrencias = count($ocorrencias);
+if ($totalOcorrencias > 0) {
+    $resumo = "Encontrada" . ($totalOcorrencias > 1 ? "s {$totalOcorrencias} ocorrências" : " 1 ocorrência") . " para o efetivo/OM do DTCEA-SJ no BCA nº {$bcaNumero}.";
+} else {
+    $resumo = "Nenhuma ocorrência encontrada para os militares cadastrados ou para o termo DTCEA-SJ no BCA nº " . ($bcaNumero ?: 'recente') . ($bcaData ? " de {$bcaData}" : "") . ".";
 }
 
 echo json_encode([
@@ -543,9 +547,10 @@ echo json_encode([
     'arquivo' => $latestPdfNome,
     'bca_numero' => $bcaNumero,
     'bca_data' => $bcaData,
-    'total_noticias' => count($noticias),
+    'total_ocorrencias' => $totalOcorrencias,
+    'total_militares_monitorados' => count($militaresMonitorados),
     'hora_leitura' => date('H:i:s'),
     'sync_cendoc' => $syncCendoc,
-    'noticias' => $noticias
+    'resumo' => $resumo,
+    'ocorrencias' => $ocorrencias
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-
