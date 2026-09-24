@@ -218,29 +218,131 @@ function sintetizarAtoJornalistico($textoAto, $bcaNumero, $bcaData) {
     ];
 }
 
+function downloadHttp($url, $timeout = 4) {
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader');
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $data = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($data !== false && $httpCode >= 200 && $httpCode < 300) {
+            return $data;
+        }
+    }
+    
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => $timeout,
+            'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DTCEA-SJ Dashboard BCA Downloader'
+        ]
+    ]);
+    return @file_get_contents($url, false, $ctx);
+}
+
+function sincronizarUltimoBcaCendoc($bcaDir) {
+    $cendocBase = 'http://www.cendoc.intraer/sisbca/';
+    $info = [
+        'tentou_download' => false,
+        'sucesso' => false,
+        'mensagem' => '',
+        'bca_numero' => null,
+        'bca_data' => null,
+        'pdf_arquivo' => null
+    ];
+
+    $html = downloadHttp($cendocBase, 3);
+    if (!$html) {
+        $info['mensagem'] = 'Sem conexão direta com o SISBCA (CENDOC). Usando cache local.';
+        return $info;
+    }
+
+    $info['tentou_download'] = true;
+
+    // Procura o Último Boletim Ostensivo no HTML do SISBCA
+    // Ex: <h3>- Último Boletim Ostensivo:</h3><p><b>BCA nº.: 163 de 24-09-2026</b> ... <a href='bca_pdf/2026/bca_163_24-09-2026.pdf'
+    if (preg_match('/Último\s+Boletim\s+Ostensivo.*?<b>BCA\s+n[ºo\?\.]*:\s*([0-9]+)\s+de\s+([0-9]{2}[_\-][0-9]{2}[_\-][0-9]{4})<\/b>.*?href=[\'"]([^\'"]+?\.pdf)[\'"]/is', $html, $matches)) {
+        $nr = $matches[1];
+        $dataRaw = $matches[2];
+        $pdfRelPath = $matches[3];
+
+        $info['bca_numero'] = $nr;
+        $info['bca_data'] = str_replace('-', '/', $dataRaw);
+
+        if (preg_match('/^https?:\/\//i', $pdfRelPath)) {
+            $pdfUrl = $pdfRelPath;
+        } else {
+            $pdfUrl = rtrim($cendocBase, '/') . '/' . ltrim($pdfRelPath, '/');
+        }
+
+        $nomeArquivo = basename(parse_url($pdfUrl, PHP_URL_PATH));
+        if (empty($nomeArquivo) || substr($nomeArquivo, -4) !== '.pdf') {
+            $nomeArquivo = "bca_{$nr}_{$dataRaw}.pdf";
+        }
+
+        $destinoLocal = rtrim($bcaDir, '/\\') . DIRECTORY_SEPARATOR . $nomeArquivo;
+
+        // Se o arquivo ainda não existe ou está corrompido/vazio
+        if (!file_exists($destinoLocal) || filesize($destinoLocal) < 2000) {
+            $conteudoPdf = downloadHttp($pdfUrl, 8);
+            if ($conteudoPdf && strlen($conteudoPdf) > 2000) {
+                file_put_contents($destinoLocal, $conteudoPdf);
+                $info['sucesso'] = true;
+                $info['mensagem'] = "BCA nº {$nr} baixado com sucesso do CENDOC!";
+                $info['pdf_arquivo'] = $nomeArquivo;
+            } else {
+                $info['mensagem'] = "Identificado BCA nº {$nr} no CENDOC, mas não foi possível baixar o PDF no momento.";
+            }
+        } else {
+            $info['sucesso'] = true;
+            $info['mensagem'] = "BCA nº {$nr} de {$info['bca_data']} já está no cache local mais recente.";
+            $info['pdf_arquivo'] = $nomeArquivo;
+        }
+    }
+
+    return $info;
+}
+
 $bcaDir = __DIR__ . '/bca';
 if (!is_dir($bcaDir)) {
     mkdir($bcaDir, 0777, true);
 }
 
+// 1. Tenta sincronizar e baixar o último boletim oficial do CENDOC SISBCA
+$syncCendoc = sincronizarUltimoBcaCendoc($bcaDir);
+
+// 2. Localiza arquivos PDF locais
 $files = glob($bcaDir . '/*.pdf');
 if (empty($files)) {
     echo json_encode([
         'success' => false,
-        'message' => 'Nenhum boletim PDF encontrado na pasta bca/',
+        'message' => 'Nenhum boletim PDF encontrado na pasta bca/ e CENDOC inacessível',
+        'sync_cendoc' => $syncCendoc,
         'noticias' => [
             [
                 'tema' => '📄 PUBLICOU NO BCA',
-                'manchete' => 'Nenhum arquivo PDF encontrado na pasta /bca',
-                'linha_apoio' => 'Adicione boletins oficiais em formato .pdf na pasta para leitura e síntese automática de notícias.'
+                'manchete' => 'Aguardando publicação oficial do BCA',
+                'linha_apoio' => 'Conectando ao SISBCA (CENDOC) para baixar o último Boletim Ostensivo automaticamente.'
             ]
         ]
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
 }
 
-// Pega o arquivo PDF mais recente
+// Ordena para obter o arquivo mais recente (prioriza por data de modificação ou número do BCA)
 usort($files, function($a, $b) {
+    preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma);
+    preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb);
+    $numA = isset($ma[1]) ? (int)$ma[1] : 0;
+    $numB = isset($mb[1]) ? (int)$mb[1] : 0;
+    if ($numA !== $numB) {
+        return $numB - $numA;
+    }
     return filemtime($b) - filemtime($a);
 });
 
