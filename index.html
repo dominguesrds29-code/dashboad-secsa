@@ -267,80 +267,35 @@
       </section>
 
       <!-- =====================================================================
-           SEÇÃO DIREITA: 2 CARDS EMPILHADOS (PROCESSOS & PRAZOS)
+           SEÇÃO DIREITA: 2 CARDS EMPILHADOS (PUBLICOU NO BCA & PRAZOS)
            ===================================================================== -->
       <div class="flex flex-col gap-6 h-full overflow-hidden">
 
-        <!-- CARD SUPERIOR: PROCESSOS E DEMANDAS DO DIA -->
+        <!-- CARD SUPERIOR: PUBLICOU NO BCA -->
         <section
-          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-6 flex-1">
+          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-2">
               <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span class="material-symbols-outlined text-blue-700 text-lg">fact_check</span>
-                Processos e Demandas do Dia
+                <span class="material-symbols-outlined text-amber-600 text-xl">menu_book</span>
+                Publicou no BCA
               </h3>
-              <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">18 em
-                andamento</span>
+              <span id="bca-numero-card-badge" class="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
+                Boletim Ostensivo
+              </span>
             </div>
-            <span
-              class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">24
-              finalizadas hoje</span>
+            <span id="bca-total-noticias-badge"
+              class="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+              Carregando atos...
+            </span>
           </div>
 
-          <div class="flex-1 flex flex-col justify-around py-2 gap-3 overflow-hidden">
-            <div
-              class="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 flex items-center justify-between hover:border-slate-300 transition">
-              <div class="min-w-0 pr-4">
-                <div class="flex items-center gap-2 mb-1">
-                  <span
-                    class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800">Assinatura
-                    Cmdo</span>
-                  <span class="text-xs font-semibold text-slate-500">Boletim Interno</span>
-                </div>
-                <div class="text-sm font-bold text-slate-800 truncate">Confecção e Fechamento do Boletim Ostensivo nº
-                  204</div>
-                <div class="text-xs text-slate-500 mt-1">Resp: 1º Ten Mariana Silva • Previsto p/ 16h30</div>
-              </div>
-              <div class="text-right shrink-0">
-                <div class="text-base font-extrabold text-slate-700 font-mono">85%</div>
-                <span class="text-[11px] text-slate-400 font-medium">Em revisão</span>
-              </div>
-            </div>
-
-            <div
-              class="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 flex items-center justify-between hover:border-slate-300 transition">
-              <div class="min-w-0 pr-4">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">Em
-                    Execução</span>
-                  <span class="text-xs font-semibold text-slate-500">Licitação</span>
-                </div>
-                <div class="text-sm font-bold text-slate-800 truncate">Manutenção e Climatização das Salas de Radar
-                </div>
-                <div class="text-xs text-slate-500 mt-1">Resp: 2º Sgt Renato • Parecer técnico CRCEA-SE</div>
-              </div>
-              <div class="text-right shrink-0">
-                <div class="text-base font-extrabold text-blue-700 font-mono">60%</div>
-                <span class="text-[11px] text-blue-600 font-medium">Em trâmite</span>
-              </div>
-            </div>
-
-            <div
-              class="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 flex items-center justify-between hover:border-slate-300 transition">
-              <div class="min-w-0 pr-4">
-                <div class="flex items-center gap-2 mb-1">
-                  <span
-                    class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-200 text-slate-700">Rotina</span>
-                  <span class="text-xs font-semibold text-slate-500">Escalas</span>
-                </div>
-                <div class="text-sm font-bold text-slate-800 truncate">Homologação da Escala de Serviço de Novembro/2024
-                </div>
-                <div class="text-xs text-slate-500 mt-1">Resp: SO Mendes Araújo • Subdivisões operacionais</div>
-              </div>
-              <div class="text-right shrink-0">
-                <div class="text-base font-extrabold text-emerald-700 font-mono">Concluído</div>
-                <span class="text-[11px] text-emerald-600 font-medium">Validado</span>
+          <!-- Conteúdo Rolável das Notícias do BCA -->
+          <div id="bca-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5">
+            <div class="py-8 text-center text-slate-400 text-sm">
+              <div class="flex items-center justify-center gap-2">
+                <span class="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                <span>Carregando publicações do BCA...</span>
               </div>
             </div>
           </div>
@@ -348,11 +303,11 @@
 
         <!-- CARD INFERIOR: PRAZOS CRÍTICOS E ENTREGAS -->
         <section
-          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-6 flex-1">
+          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-2">
               <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span class="material-symbols-outlined text-rose-600 text-lg">alarm</span>
+                <span class="material-symbols-outlined text-rose-600 text-xl">alarm</span>
                 Prazos Críticos e Entregas
               </h3>
               <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
@@ -418,20 +373,22 @@
   </main>
 
   <!-- =========================================================================
-       3. RODAPÉ ESTILO NEWS TICKER / FAB INFORMA / BOLETIM ADMINISTRATIVO
+       3. RODAPÉ ESTILO NEWS TICKER / PREVISÃO DO TEMPO SÃO JOSÉ DOS CAMPOS - SP
        ========================================================================= -->
   <footer
     class="fixed bottom-0 left-0 right-0 z-50 h-12 bg-white border-fab-dark shadow-2xl flex items-center overflow-hidden border-t">
     <div class="h-full bg-fab-navy text-white px-5 flex items-center gap-2 shrink-0 z-20 border-r border-blue-900">
-      <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-      <span id="ticker-bca-badge"
-        class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-yellow-300">Publicou no BCA</span>
+      <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+      <span class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-cyan-300 flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-sm text-cyan-300">routine</span>
+        Previsão do Tempo • São José dos Campos-SP
+      </span>
     </div>
     <div class="flex-1 overflow-hidden relative bg-slate-900 text-slate-200 h-full flex items-center">
-      <div id="ticker-bca-conteudo" class="animate-marquee-smooth text-xs font-medium flex items-center gap-10 pl-6">
+      <div id="ticker-weather-conteudo" class="animate-marquee-smooth text-xs font-medium flex items-center gap-8 pl-6">
         <span class="flex items-center gap-2">
-          <strong class="text-yellow-300 font-semibold">BCA:</strong>
-          <span>Carregando publicações oficiais...</span>
+          <strong class="text-cyan-300 font-semibold">METEOROLOGIA:</strong>
+          <span>Sincronizando dados climáticos de São José dos Campos...</span>
         </span>
       </div>
     </div>
@@ -614,11 +571,12 @@
     carregarDadosEfetivo();
     setInterval(carregarDadosEfetivo, 30000);
 
-    // 5. Carregar e Atualizar Notícias Extraídas do PDF do BCA (Estilo NotebookLM)
+    // 5. Carregar Notícias do BCA no Card Superior Direito
     async function carregarNoticiasBCA() {
-      const tickerConteudo = document.getElementById('ticker-bca-conteudo');
-      const tickerBadge = document.getElementById('ticker-bca-badge');
-      if (!tickerConteudo) return;
+      const cardConteudo = document.getElementById('bca-card-conteudo');
+      const cardBadge = document.getElementById('bca-numero-card-badge');
+      const totalBadge = document.getElementById('bca-total-noticias-badge');
+      if (!cardConteudo) return;
 
       try {
         const response = await fetch('api_bca.php?t=' + Date.now());
@@ -626,34 +584,41 @@
         const data = await response.json();
 
         if (data.success && data.noticias && data.noticias.length > 0) {
-          if (tickerBadge && data.bca_numero) {
-            tickerBadge.textContent = `Publicou no BCA ${data.bca_numero}`;
+          if (cardBadge && data.bca_numero) {
+            cardBadge.textContent = `BCA Nº ${data.bca_numero}`;
             if (data.bca_data) {
-              tickerBadge.title = `BCA Nº ${data.bca_numero} de ${data.bca_data}`;
+              cardBadge.title = `Publicado em ${data.bca_data}`;
             }
           }
 
-          // Renderizador no estilo NotebookLM (Tema com ícone, Manchete direta e Linha de Apoio)
-          const renderItem = (n) => `
-            <div class="inline-flex items-center gap-2.5 px-3.5 py-1 rounded-md bg-slate-800/90 border border-slate-700/60 shadow-xs">
-              <span class="font-extrabold text-xs text-yellow-400 tracking-wide uppercase flex items-center gap-1 shrink-0">${n.tema}</span>
-              <span class="text-slate-600 font-bold">|</span>
-              <span class="text-xs font-bold text-white tracking-normal">${n.manchete}</span>
-              <span class="text-slate-600 font-bold">|</span>
-              <span class="text-xs font-bold text-sky-400 shrink-0">Detalhes:</span>
-              <span class="text-xs font-medium text-slate-200">${n.linha_apoio}</span>
-            </div>
-          `;
+          if (totalBadge) {
+            totalBadge.textContent = `${data.noticias.length} publicações`;
+          }
 
-          // Duplicamos a lista para criar um loop de scroll perfeito e sem saltos no translateX(-50%)
-          const listaDuplicada = [...data.noticias, ...data.noticias];
-          tickerConteudo.innerHTML = listaDuplicada.map(renderItem).join('<span class="text-yellow-500/80 font-black text-xs px-3">✦</span>');
+          // Renderização nos cards verticais com scroll suave
+          cardConteudo.innerHTML = data.noticias.map((n, idx) => `
+            <div class="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:border-amber-300 hover:bg-amber-50/30 transition shadow-2xs">
+              <div class="flex items-center gap-2 mb-1.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-200/60 tracking-wide">
+                  ${n.tema}
+                </span>
+              </div>
+              <h4 class="text-sm font-bold text-slate-900 leading-snug">
+                ${n.manchete}
+              </h4>
+              <p class="text-xs text-slate-600 mt-1.5 leading-relaxed bg-white/80 p-2 rounded-lg border border-slate-100">
+                <strong class="text-blue-700 font-semibold">Detalhes:</strong> ${n.linha_apoio}
+              </p>
+            </div>
+          `).join('');
         } else {
-          tickerConteudo.innerHTML = `
-            <span class="flex items-center gap-2 whitespace-nowrap text-slate-300">
-              <strong class="text-yellow-300 font-bold">BCA:</strong>
-              <span>Nenhum boletim recente localizado na pasta /bca.</span>
-            </span>
+          if (totalBadge) totalBadge.textContent = 'Sem publicações';
+          cardConteudo.innerHTML = `
+            <div class="py-10 text-center text-slate-400 text-sm">
+              <span class="material-symbols-outlined text-3xl text-slate-300 mb-1">newspaper</span>
+              <p class="font-bold text-slate-600">Nenhum boletim recente</p>
+              <p class="text-xs text-slate-400 mt-0.5">Adicione o PDF do BCA na pasta /bca para visualização automática.</p>
+            </div>
           `;
         }
       } catch (err) {
@@ -661,8 +626,124 @@
       }
     }
 
+    // 6. Previsão do Tempo para São José dos Campos - SP (Open-Meteo API)
+    const wmoClimaMap = {
+      0: { desc: 'Céu Limpo', icon: '☀️' },
+      1: { desc: 'Predomínio de Sol', icon: '🌤️' },
+      2: { desc: 'Parcialmente Nublado', icon: '⛅' },
+      3: { desc: 'Nublado', icon: '☁️' },
+      45: { desc: 'Nevoeiro', icon: '🌫️' },
+      48: { desc: 'Nevoeiro Denso', icon: '🌫️' },
+      51: { desc: 'Garoa Leve', icon: '🌦️' },
+      53: { desc: 'Garoa Moderada', icon: '🌦️' },
+      55: { desc: 'Garoa Intensa', icon: '🌧️' },
+      61: { desc: 'Chuva Fraca', icon: '🌧️' },
+      63: { desc: 'Chuva Moderada', icon: '🌧️' },
+      65: { desc: 'Chuva Forte', icon: '🌧️' },
+      80: { desc: 'Pancadas de Chuva', icon: '🌦️' },
+      81: { desc: 'Pancadas Fortes', icon: '🌧️' },
+      82: { desc: 'Chuva Torrencial', icon: '⛈️' },
+      95: { desc: 'Tempestade c/ Raios', icon: '⛈️' },
+      96: { desc: 'Tempestade c/ Granizo', icon: '⛈️' }
+    };
+
+    async function carregarPrevisaoTempoSJC() {
+      const tickerConteudo = document.getElementById('ticker-weather-conteudo');
+      if (!tickerConteudo) return;
+
+      try {
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=-23.1791&longitude=-45.8872&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America%2FSao_Paulo';
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('Falha ao obter dados meteorológicos: ' + resp.status);
+        const data = await resp.json();
+
+        const cur = data.current || {};
+        const daily = data.daily || {};
+
+        const tempAtual = Math.round(cur.temperature_2m ?? 23);
+        const sensacao = Math.round(cur.apparent_temperature ?? tempAtual);
+        const umidade = cur.relative_humidity_2m ?? '--';
+        const vento = Math.round(cur.wind_speed_10m ?? 0);
+        const codeAtual = cur.weather_code ?? 0;
+        const condicaoAtual = wmoClimaMap[codeAtual] || { desc: 'Tempo Estável', icon: '🌤️' };
+
+        const maxHoje = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[0]) : tempAtual;
+        const minHoje = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[0]) : tempAtual;
+        const chuvaHoje = daily.precipitation_probability_max ? daily.precipitation_probability_max[0] : 0;
+
+        // Amanhã
+        const codeAmanha = daily.weather_code ? daily.weather_code[1] : 0;
+        const condicaoAmanha = wmoClimaMap[codeAmanha] || { desc: 'Estável', icon: '🌤️' };
+        const maxAmanha = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[1]) : '--';
+        const minAmanha = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[1]) : '--';
+        const chuvaAmanha = daily.precipitation_probability_max ? daily.precipitation_probability_max[1] : 0;
+
+        // Depois de amanhã
+        const codeDepois = daily.weather_code ? daily.weather_code[2] : 0;
+        const condicaoDepois = wmoClimaMap[codeDepois] || { desc: 'Estável', icon: '🌤️' };
+        const maxDepois = daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[2]) : '--';
+        const minDepois = daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[2]) : '--';
+
+        const weatherChips = [
+          `
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/90 border border-slate-700/70 shadow-xs">
+              <span class="text-base">${condicaoAtual.icon}</span>
+              <span class="font-extrabold text-xs text-cyan-300 tracking-wide">AGORA EM SÃO JOSÉ DOS CAMPOS:</span>
+              <span class="text-xs font-bold text-white">${condicaoAtual.desc} • ${tempAtual}°C</span>
+              <span class="text-slate-500 font-bold">|</span>
+              <span class="text-xs text-slate-300 font-medium">Sensação Térmica: <strong>${sensacao}°C</strong></span>
+            </div>
+          `,
+          `
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/90 border border-slate-700/70 shadow-xs">
+              <span class="text-xs font-extrabold text-amber-300">🌡️ HOJE:</span>
+              <span class="text-xs font-bold text-white">Máx ${maxHoje}°C / Mín ${minHoje}°C</span>
+              <span class="text-slate-500 font-bold">|</span>
+              <span class="text-xs text-slate-300 font-medium">💧 Umidade: <strong>${umidade}%</strong></span>
+              <span class="text-slate-500 font-bold">|</span>
+              <span class="text-xs text-slate-300 font-medium">💨 Vento: <strong>${vento} km/h</strong></span>
+              <span class="text-slate-500 font-bold">|</span>
+              <span class="text-xs text-sky-300 font-semibold">🌧️ Prob. Chuva: <strong>${chuvaHoje}%</strong></span>
+            </div>
+          `,
+          `
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/90 border border-slate-700/70 shadow-xs">
+              <span class="text-xs font-extrabold text-emerald-400">📅 AMANHÃ:</span>
+              <span class="text-base">${condicaoAmanha.icon}</span>
+              <span class="text-xs font-bold text-white">${condicaoAmanha.desc}</span>
+              <span class="text-xs text-slate-300 font-medium">(Máx ${maxAmanha}°C / Mín ${minAmanha}°C • Chuva ${chuvaAmanha}%)</span>
+            </div>
+          `,
+          `
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/90 border border-slate-700/70 shadow-xs">
+              <span class="text-xs font-extrabold text-indigo-400">📅 DEPOIS DE AMANHÃ:</span>
+              <span class="text-base">${condicaoDepois.icon}</span>
+              <span class="text-xs font-bold text-white">${condicaoDepois.desc}</span>
+              <span class="text-xs text-slate-300 font-medium">(Máx ${maxDepois}°C / Mín ${minDepois}°C)</span>
+            </div>
+          `
+        ];
+
+        // Duplica para loop infinito sem saltos
+        const chipsDuplicados = [...weatherChips, ...weatherChips];
+        tickerConteudo.innerHTML = chipsDuplicados.join('<span class="text-cyan-500/80 font-black text-xs px-3">✦</span>');
+
+      } catch (err) {
+        console.warn('Erro ao carregar previsão do tempo:', err);
+        tickerConteudo.innerHTML = `
+          <div class="inline-flex items-center gap-2 px-3 py-1 text-xs text-slate-300">
+            <span class="font-bold text-cyan-300">São José dos Campos - SP:</span>
+            <span>24°C • Parcialmente Nublado • Máx: 28°C / Mín: 17°C • Umidade: 62%</span>
+          </div>
+        `;
+      }
+    }
+
     carregarNoticiasBCA();
     setInterval(carregarNoticiasBCA, 60000);
+
+    carregarPrevisaoTempoSJC();
+    setInterval(carregarPrevisaoTempoSJC, 300000); // Atualiza clima a cada 5 min
   </script>
 </body>
 
