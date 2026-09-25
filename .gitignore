@@ -1,4 +1,9 @@
-.env
+# Diretórios e arquivos gerados dinamicamente pelo sync do BCA
+bca/bca_*.pdf
+bca/bca_sync.log
+bca/bca_cache.json
+
+# Logs e arquivos temporários do sistema
+*.log
 .DS_Store
 Thumbs.db
-*.log
