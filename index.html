@@ -611,10 +611,10 @@
                     ${oc.militar_guerra || oc.militar_nome}
                   </span>
                 </div>
-                ${oc.folha ? `
-                  <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
-                    <span class="material-symbols-outlined text-xs">description</span>
-                    ${oc.folha}
+                ${oc.pagina || oc.folha ? `
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                    <span class="material-symbols-outlined text-xs text-amber-700">menu_book</span>
+                    ${oc.pagina || oc.folha}
                   </span>
                 ` : ''}
               </div>

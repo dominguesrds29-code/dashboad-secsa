@@ -82,44 +82,7 @@ $db_name = getenv('DB_DATABASE') ?: 'efetivosj';
 $db_user = getenv('DB_USERNAME') ?: 'root';
 $db_pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : '';
 
-// 2. Extração de texto de PDF nativo com descompressão FlateDecode
-function extractTextFromPdfContent($content) {
-    $text = "";
-    if (preg_match_all('/stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $matches)) {
-        foreach ($matches[1] as $stream) {
-            $uncompressed = @gzuncompress($stream);
-            if ($uncompressed !== false) {
-                $uncompressed = preg_replace_callback('/\\\\([0-7]{1,3})/', function($m) {
-                    return chr(octdec($m[1]));
-                }, $uncompressed);
-
-                if (preg_match_all('/\((.*?)\)\s*Tj/s', $uncompressed, $tMatches)) {
-                    $text .= implode(' ', $tMatches[1]) . "\n";
-                }
-                if (preg_match_all('/\[(.*?)\]\s*TJ/s', $uncompressed, $tMatches)) {
-                    foreach ($tMatches[1] as $tj) {
-                        if (preg_match_all('/\((.*?)\)/s', $tj, $subMatches)) {
-                            $text .= implode('', $subMatches[1]);
-                        }
-                    }
-                    $text .= "\n";
-                }
-            } else {
-                if (preg_match_all('/\((.*?)\)\s*Tj/s', $stream, $tMatches)) {
-                    $text .= implode(' ', $tMatches[1]) . "\n";
-                }
-            }
-        }
-    }
-
-    $text = mb_convert_encoding($text, 'UTF-8', 'ISO-8859-1');
-    $text = str_replace(['\\(', '\\)', '\\-'], ['(', ')', '-'], $text);
-    $text = str_replace('\\', '', $text);
-    $text = preg_replace('/\s+/', ' ', $text);
-    return $text;
-}
-
-// 3. Normalização de texto sem acentos para busca insensível
+// 2. Normalização de texto sem acentos para busca insensível
 function normalizarTextoBusca($str) {
     if (!$str) return '';
     $str = mb_strtoupper($str, 'UTF-8');
@@ -134,6 +97,52 @@ function normalizarTextoBusca($str) {
     $str = strtr($str, $map);
     $str = preg_replace('/[^A-Z0-9\s\-_]/', ' ', $str);
     return trim(preg_replace('/\s+/', ' ', $str));
+}
+
+// 3. Extração de texto do PDF estruturado PÁGINA A PÁGINA
+function extrairPaginasDoPdf($content) {
+    $paginas = [];
+    if (preg_match_all('/stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $streamMatches)) {
+        $pNum = 1;
+        foreach ($streamMatches[1] as $stream) {
+            $uncompressed = @gzuncompress($stream);
+            $tStream = "";
+            if ($uncompressed !== false) {
+                if (strpos($uncompressed, 'Tj') !== false || strpos($uncompressed, 'TJ') !== false || strpos($uncompressed, 'BT') !== false) {
+                    $uncompressed = preg_replace_callback('/\\\\([0-7]{1,3})/', function($m) {
+                        return chr(octdec($m[1]));
+                    }, $uncompressed);
+
+                    if (preg_match_all('/\((.*?)\)\s*Tj/s', $uncompressed, $tMatches)) {
+                        $tStream .= implode(' ', $tMatches[1]) . " ";
+                    }
+                    if (preg_match_all('/\[(.*?)\]\s*TJ/s', $uncompressed, $tMatches)) {
+                        foreach ($tMatches[1] as $tj) {
+                            if (preg_match_all('/\((.*?)\)/s', $tj, $subMatches)) {
+                                $tStream .= implode('', $subMatches[1]);
+                            }
+                        }
+                        $tStream .= " ";
+                    }
+                }
+            }
+
+            $tStream = trim(mb_convert_encoding($tStream, 'UTF-8', 'ISO-8859-1'));
+            $tStream = str_replace(['\\(', '\\)', '\\-'], ['(', ')', '-'], $tStream);
+            $tStream = str_replace('\\', '', $tStream);
+            $tStream = preg_replace('/\s+/', ' ', $tStream);
+
+            if (strlen($tStream) > 25) {
+                $paginas[$pNum] = [
+                    'pagina' => $pNum,
+                    'texto_bruto' => $tStream,
+                    'texto_norm' => normalizarTextoBusca($tStream)
+                ];
+                $pNum++;
+            }
+        }
+    }
+    return $paginas;
 }
 
 // 4. Download HTTP resiliente
@@ -379,43 +388,18 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         return $resultadoErro;
     }
 
-    // Extração e normalização do texto do PDF
-    registrarLogBca("Iniciando extração do texto e mapeamento de folhas do PDF ({$latestPdfNome})...", $logFile);
-    $pdfTextBruto = extractTextFromPdfContent($pdfContent);
-    $pdfTextNorm = normalizarTextoBusca($pdfTextBruto);
-
-    // Mapeamento preciso de folhas do BCA (ex: Fl. nº 15773, 15774...)
-    $folhasMap = [];
-    if (preg_match_all('/(?:(?:20[0-9]{2}|seguinte:)\s+)([1-9][0-9]{3,5})/iu', $pdfTextBruto, $mFolhas, PREG_OFFSET_CAPTURE)) {
-        foreach ($mFolhas[1] as $mf) {
-            $numF = (int)$mf[0];
-            if ($numF >= 2020 && $numF <= 2035) continue; // ignora anos
-            $folhasMap[] = [
-                'pos' => $mf[1],
-                'folha' => $mf[0]
-            ];
-        }
-    }
-
-    function obterFolhaPorPosicao($pos, $folhasMap) {
-        $folhaEncontrada = null;
-        foreach ($folhasMap as $f) {
-            if ($f['pos'] <= $pos) {
-                $folhaEncontrada = $f['folha'];
-            } else {
-                break;
-            }
-        }
-        return $folhaEncontrada ? "Fl. nº {$folhaEncontrada}" : "Fl. nº Inicial";
-    }
-
-    registrarLogBca("-> Texto extraído: " . strlen($pdfTextBruto) . " caracteres | Folhas mapeadas: " . count($folhasMap), $logFile);
+    // Extração estruturada do texto do PDF página por página
+    registrarLogBca("Iniciando extração do texto página a página do PDF ({$latestPdfNome})...", $logFile);
+    $paginas = extrairPaginasDoPdf($pdfContent);
+    $totalPaginas = count($paginas);
+    registrarLogBca("-> Total de páginas identificadas e processadas: {$totalPaginas}", $logFile);
 
     // Identificação de Número e Data do BCA caso não obtidos via HTML
+    $primeiraPaginaTxt = $paginas[1]['texto_bruto'] ?? '';
     if (!$bcaNumero) {
         if (preg_match('/bca[_\-\s]*([0-9]+)/i', $latestPdfNome, $mNum)) {
             $bcaNumero = $mNum[1];
-        } elseif (preg_match('/BOLETIM DO COMANDO DA AERON[AÁ]UTICA N[ºO\?\s]*([0-9]+)/iu', $pdfTextBruto, $mNum)) {
+        } elseif (preg_match('/BOLETIM DO COMANDO DA AERON[AÁ]UTICA N[ºO\?\s]*([0-9]+)/iu', $primeiraPaginaTxt, $mNum)) {
             $bcaNumero = $mNum[1];
         }
     }
@@ -423,7 +407,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     if (!$bcaData) {
         if (preg_match('/([0-9]{2})[_\-]([0-9]{2})[_\-](20[0-9]{2})/', $latestPdfNome, $mDate)) {
             $bcaData = "{$mDate[1]}/{$mDate[2]}/{$mDate[3]}";
-        } elseif (preg_match('/([0-9]{1,2}\s+de\s+[a-zç]+\s+de\s+20[0-9]{2})/iu', $pdfTextBruto, $mDate)) {
+        } elseif (preg_match('/([0-9]{1,2}\s+de\s+[a-zç]+\s+de\s+20[0-9]{2})/iu', $primeiraPaginaTxt, $mDate)) {
             $bcaData = trim($mDate[1]);
         }
     }
@@ -468,66 +452,68 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         registrarLogBca("[ERRO DB] Falha ao conectar ao banco MySQL: " . $e->getMessage(), $logFile);
     }
 
-    // Processamento estrito e focado das ocorrências (Termo + Folha)
+    // Processamento estrito e focado das ocorrências por PÁGINA DO PDF
     $ocorrencias = [];
     $ocorrenciasHashes = [];
 
     registrarLogBca("Iniciando varredura por termos e parâmetros no BCA nº {$bcaNumero}...", $logFile);
 
-    // A) Busca pelo termo DTCEA-SJ e variações estritas da Unidade
+    // Padrões de busca para Unidade
     $padroesUnidade = [
         '/\bDTCEA[\s\-_]*SJ\b/iu' => 'DTCEA-SJ',
         '/\bDESTACAMENTO\s+DE\s+CONTROLE\s+DO\s+ESPA[ÇC]O\s+A[ÉE]REO\s+DE\s+S[ÃA]O\s+JOS[ÉE]\s+DOS\s+CAMPOS\b/iu' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS'
     ];
 
-    foreach ($padroesUnidade as $padraoRegex => $nomeExibicao) {
-        if (preg_match_all($padraoRegex, $pdfTextBruto, $mMatches, PREG_OFFSET_CAPTURE)) {
-            foreach ($mMatches[0] as $match) {
-                $pos = $match[1];
-                $termoEncontrado = trim($match[0]);
-                $folhaLocalizada = obterFolhaPorPosicao($pos, $folhasMap);
-                $hash = md5("UNIDADE_{$folhaLocalizada}_" . substr($termoEncontrado, 0, 30));
+    // Varredura página por página
+    foreach ($paginas as $numPagina => $pData) {
+        $txtBruto = $pData['texto_bruto'];
+        $txtNorm = $pData['texto_norm'];
+        $rotuloPagina = "Pág. {$numPagina}";
 
-                if (!isset($ocorrenciasHashes[$hash])) {
-                    $ocorrenciasHashes[$hash] = true;
-                    $ocItem = [
-                        'tipo' => 'unidade',
-                        'titulo' => 'Citação Oficial do DTCEA-SJ',
-                        'termo_encontrado' => $termoEncontrado,
-                        'folha' => $folhaLocalizada,
-                        'militar_nome' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS',
-                        'militar_guerra' => 'DTCEA-SJ',
-                        'militar_saram' => 'OM',
-                        'militar_secao' => 'Comando / Efetivo'
-                    ];
-                    $ocorrencias[] = $ocItem;
-                    registrarLogBca("   [CITAÇÃO UNIDADE] {$nomeExibicao} | Termo: '{$termoEncontrado}' | Localização: {$folhaLocalizada}", $logFile);
+        // A) Busca por Unidade nesta página
+        foreach ($padroesUnidade as $padraoRegex => $nomeExibicao) {
+            if (preg_match_all($padraoRegex, $txtBruto, $mMatches)) {
+                foreach ($mMatches[0] as $match) {
+                    $termoEncontrado = trim($match);
+                    $hash = md5("UNIDADE_{$numPagina}_" . substr($termoEncontrado, 0, 30));
+
+                    if (!isset($ocorrenciasHashes[$hash])) {
+                        $ocorrenciasHashes[$hash] = true;
+                        $ocItem = [
+                            'tipo' => 'unidade',
+                            'titulo' => 'Citação Oficial do DTCEA-SJ',
+                            'termo_encontrado' => $termoEncontrado,
+                            'pagina' => $rotuloPagina,
+                            'numero_pagina' => $numPagina,
+                            'militar_nome' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS',
+                            'militar_guerra' => 'DTCEA-SJ',
+                            'militar_saram' => 'OM',
+                            'militar_secao' => 'Comando / Efetivo'
+                        ];
+                        $ocorrencias[] = $ocItem;
+                        registrarLogBca("   [CITAÇÃO UNIDADE] {$nomeExibicao} | Termo: '{$termoEncontrado}' | Localização: {$rotuloPagina}", $logFile);
+                    }
                 }
             }
         }
-    }
 
-    // B) Busca por cada militar do efetivo (SARAM estrito e Nome Completo estrito)
-    foreach ($militaresMonitorados as $m) {
-        $nomeCompleto = trim($m['name'] ?? '');
-        $nomeGuerra = trim($m['war_name'] ?? '');
-        $grade = trim($m['grade'] ?? '');
-        $saram = trim($m['saram'] ?? '');
-        $secao = trim($m['secao_nome'] ?? 'Geral');
+        // B) Busca por Militares nesta página
+        foreach ($militaresMonitorados as $m) {
+            $nomeCompleto = trim($m['name'] ?? '');
+            $nomeGuerra = trim($m['war_name'] ?? '');
+            $grade = trim($m['grade'] ?? '');
+            $saram = trim($m['saram'] ?? '');
+            $secao = trim($m['secao_nome'] ?? 'Geral');
 
-        $nomeFormatado = trim("{$grade} " . ($nomeGuerra ?: $nomeCompleto));
+            $nomeFormatado = trim("{$grade} " . ($nomeGuerra ?: $nomeCompleto));
 
-        // 1. Busca por SARAM (ex: 7791232 ou 779123-2) com limites estritos
-        if (!empty($saram)) {
-            $saramDigitos = preg_replace('/[^0-9]/', '', $saram);
-            if (strlen($saramDigitos) >= 6) {
-                // Regex com limites estritos para evitar falsos positivos
-                $regexSaram = '/(?<![0-9])' . preg_quote($saramDigitos, '/') . '(?![0-9])/i';
-                if (preg_match_all($regexSaram, $pdfTextBruto, $mSaram, PREG_OFFSET_CAPTURE)) {
-                    foreach ($mSaram[0] as $match) {
-                        $pos = $match[1];
-                        $folhaLocalizada = obterFolhaPorPosicao($pos, $folhasMap);
-                        $hash = md5("MILITAR_{$m['id']}_SARAM_{$folhaLocalizada}");
+            // 1. Busca por SARAM com limites estritos de número
+            if (!empty($saram)) {
+                $saramDigitos = preg_replace('/[^0-9]/', '', $saram);
+                if (strlen($saramDigitos) >= 6) {
+                    $regexSaram = '/(?<![0-9])' . preg_quote($saramDigitos, '/') . '(?![0-9])/i';
+                    if (preg_match($regexSaram, $txtBruto)) {
+                        $hash = md5("MILITAR_{$m['id']}_SARAM_{$numPagina}");
 
                         if (!isset($ocorrenciasHashes[$hash])) {
                             $ocorrenciasHashes[$hash] = true;
@@ -535,30 +521,27 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
                                 'tipo' => 'militar',
                                 'titulo' => "Citação do militar {$nomeFormatado}",
                                 'termo_encontrado' => "SARAM {$saram}",
-                                'folha' => $folhaLocalizada,
+                                'pagina' => $rotuloPagina,
+                                'numero_pagina' => $numPagina,
                                 'militar_nome' => $nomeCompleto,
                                 'militar_guerra' => $nomeFormatado,
                                 'militar_saram' => $saram,
                                 'militar_secao' => $secao
                             ];
                             $ocorrencias[] = $ocItem;
-                            registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} (SARAM: {$saram} | Seção: {$secao}) | Termo: SARAM {$saram} | Localização: {$folhaLocalizada}", $logFile);
+                            registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} (SARAM: {$saram} | Seção: {$secao}) | Termo: SARAM {$saram} | Localização: {$rotuloPagina}", $logFile);
                         }
                     }
                 }
             }
-        }
 
-        // 2. Busca por Nome Completo estrito (mínimo 10 caracteres e 2 palavras)
-        if (!empty($nomeCompleto) && mb_strlen($nomeCompleto) >= 10 && strpos($nomeCompleto, ' ') !== false) {
-            $nomeNorm = normalizarTextoBusca($nomeCompleto);
-            $regexNome = '/\b' . preg_replace('/\s+/', '\s+', preg_quote($nomeNorm, '/')) . '\b/i';
-            
-            if (preg_match_all($regexNome, $pdfTextNorm, $mNomes, PREG_OFFSET_CAPTURE)) {
-                foreach ($mNomes[0] as $match) {
-                    $pos = $match[1];
-                    $folhaLocalizada = obterFolhaPorPosicao($pos, $folhasMap);
-                    $hash = md5("MILITAR_{$m['id']}_NOME_{$folhaLocalizada}");
+            // 2. Busca por Nome Completo estrito (mínimo 10 caracteres e 2 palavras)
+            if (!empty($nomeCompleto) && mb_strlen($nomeCompleto) >= 10 && strpos($nomeCompleto, ' ') !== false) {
+                $nomeNorm = normalizarTextoBusca($nomeCompleto);
+                $regexNome = '/\b' . preg_replace('/\s+/', '\s+', preg_quote($nomeNorm, '/')) . '\b/i';
+                
+                if (preg_match($regexNome, $txtNorm)) {
+                    $hash = md5("MILITAR_{$m['id']}_NOME_{$numPagina}");
 
                     if (!isset($ocorrenciasHashes[$hash])) {
                         $ocorrenciasHashes[$hash] = true;
@@ -566,14 +549,15 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
                             'tipo' => 'militar',
                             'titulo' => "Citação do militar {$nomeFormatado}",
                             'termo_encontrado' => $nomeCompleto,
-                            'folha' => $folhaLocalizada,
+                            'pagina' => $rotuloPagina,
+                            'numero_pagina' => $numPagina,
                             'militar_nome' => $nomeCompleto,
                             'militar_guerra' => $nomeFormatado,
                             'militar_saram' => $saram ?: 'Não inf.',
                             'militar_secao' => $secao
                         ];
                         $ocorrencias[] = $ocItem;
-                        registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} ({$nomeCompleto} | Seção: {$secao}) | Termo: Nome Completo | Localização: {$folhaLocalizada}", $logFile);
+                        registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} ({$nomeCompleto} | Seção: {$secao}) | Termo: Nome Completo | Localização: {$rotuloPagina}", $logFile);
                     }
                 }
             }
@@ -595,6 +579,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         'caminho_arquivo' => 'bca/' . $latestPdfNome,
         'bca_numero' => $bcaNumero,
         'bca_data' => $bcaData,
+        'total_paginas' => $totalPaginas,
         'total_ocorrencias' => $totalOcorrencias,
         'total_militares_monitorados' => count($militaresMonitorados),
         'ultima_atualizacao' => date('d/m/Y H:i:s'),
@@ -609,7 +594,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     @chmod($cacheFile, 0777);
 
     registrarLogBca("RESUMO DA EXECUÇÃO:", $logFile);
-    registrarLogBca("-> Boletim: BCA nº {$bcaNumero} ({$bcaData})", $logFile);
+    registrarLogBca("-> Boletim: BCA nº {$bcaNumero} ({$bcaData}) | Total de Páginas: {$totalPaginas}", $logFile);
     registrarLogBca("-> Ocorrências localizadas: {$totalOcorrencias}", $logFile);
     registrarLogBca("-> PDF armazenado em: bca/{$latestPdfNome}", $logFile);
     registrarLogBca("-> Cache JSON atualizado em: bca/bca_cache.json", $logFile);
