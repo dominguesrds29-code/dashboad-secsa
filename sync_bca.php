@@ -58,6 +58,18 @@ function registrarLogBca($mensagem, $logFile) {
     }
 }
 
+// Formatação amigável de lista de páginas em português
+function formatarListaPaginas(array $paginas) {
+    sort($paginas, SORT_NUMERIC);
+    $paginas = array_values(array_unique($paginas));
+    $qtd = count($paginas);
+    if ($qtd === 0) return 'N/I';
+    if ($qtd === 1) return "Pág. {$paginas[0]}";
+    if ($qtd === 2) return "Págs. {$paginas[0]} e {$paginas[1]}";
+    $ult = array_pop($paginas);
+    return "Págs. " . implode(', ', $paginas) . " e {$ult}";
+}
+
 // 1. Função auxiliar para carregar .env do ctr_efetivo
 function carregarEnv($caminho) {
     if (!file_exists($caminho)) return;
@@ -131,7 +143,6 @@ function extrairPaginasDoPdf($content, $pdfFilePath = null) {
     $objects = [];
     $streams = [];
 
-    // 1. Objetos diretos
     if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*(.*?)(?:endobj|stream)/s', $content, $mObjs, PREG_OFFSET_CAPTURE)) {
         foreach ($mObjs[1] as $idx => $idMatch) {
             $objNum = (int)$idMatch[0];
@@ -139,7 +150,6 @@ function extrairPaginasDoPdf($content, $pdfFilePath = null) {
         }
     }
 
-    // 2. Streams de dados indexados por objNum
     if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*<<(?:(?!>>).)*?>>\s*stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $mStreams)) {
         foreach ($mStreams[1] as $idx => $idMatch) {
             $objNum = (int)$idMatch;
@@ -147,7 +157,6 @@ function extrairPaginasDoPdf($content, $pdfFilePath = null) {
         }
     }
 
-    // 3. Objetos dentro de /Type /ObjStm
     if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*<<(?:(?!>>).)*?\/Type\s*\/ObjStm\b(?:(?!>>).)*?\/N\s+(\d+)\b(?:(?!>>).)*?\/First\s+(\d+)\b.*?>>\s*stream[\r\n]+(.*?)[\r\n]+endstream/is', $content, $mObjStm)) {
         foreach ($mObjStm[5] as $idx => $streamData) {
             $uncompressed = @gzuncompress($streamData);
@@ -170,7 +179,6 @@ function extrairPaginasDoPdf($content, $pdfFilePath = null) {
         }
     }
 
-    // Coleta recursiva de nós /Page a partir do catálogo raiz /Pages
     $rootPagesId = null;
     foreach ($objects as $id => $dict) {
         if (preg_match('/\/Type\s*\/Catalog\b(?:(?!>>).)*?\/Pages\s+(\d+)\s+(\d+)\s+R/is', $dict, $mRoot)) {
@@ -508,6 +516,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
             'ultima_atualizacao' => date('d/m/Y H:i:s'),
             'status_download' => $statusDownload,
             'total_ocorrencias' => 0,
+            'total_citacoes' => 0,
             'ocorrencias' => []
         ];
         @file_put_contents($cacheFile, json_encode($resultadoErro, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -578,9 +587,8 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         registrarLogBca("[ERRO DB] Falha ao conectar ao banco MySQL: " . $e->getMessage(), $logFile);
     }
 
-    // Processamento estrito e focado das ocorrências por PÁGINA EXATA DO PDF
-    $ocorrencias = [];
-    $ocorrenciasHashes = [];
+    // Processamento estrito com AGLUTINAÇÃO por entidade/termo (Unidade ou Militar)
+    $ocorrenciasAgrupadas = [];
 
     registrarLogBca("Iniciando varredura por termos e parâmetros no BCA nº {$bcaNumero}...", $logFile);
 
@@ -594,30 +602,31 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     foreach ($paginas as $numPagina => $pData) {
         $txtBruto = $pData['texto_bruto'];
         $txtNorm = $pData['texto_norm'];
-        $rotuloPagina = "Pág. {$numPagina}";
 
         // A) Busca por Unidade nesta página
         foreach ($padroesUnidade as $padraoRegex => $nomeExibicao) {
             if (preg_match_all($padraoRegex, $txtBruto, $mMatches)) {
                 foreach ($mMatches[0] as $match) {
                     $termoEncontrado = trim($match);
-                    $hash = md5("UNIDADE_{$numPagina}_" . substr($termoEncontrado, 0, 30));
+                    $chave = 'UNIDADE_DTCEA_SJ';
 
-                    if (!isset($ocorrenciasHashes[$hash])) {
-                        $ocorrenciasHashes[$hash] = true;
-                        $ocItem = [
+                    if (!isset($ocorrenciasAgrupadas[$chave])) {
+                        $ocorrenciasAgrupadas[$chave] = [
                             'tipo' => 'unidade',
                             'titulo' => 'Citação Oficial do DTCEA-SJ',
                             'termo_encontrado' => $termoEncontrado,
-                            'pagina' => $rotuloPagina,
-                            'numero_pagina' => $numPagina,
+                            'termos_lista' => [$termoEncontrado],
                             'militar_nome' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS',
                             'militar_guerra' => 'DTCEA-SJ',
                             'militar_saram' => 'OM',
-                            'militar_secao' => 'Comando / Efetivo'
+                            'militar_secao' => 'Comando / Efetivo',
+                            'paginas' => [$numPagina]
                         ];
-                        $ocorrencias[] = $ocItem;
-                        registrarLogBca("   [CITAÇÃO UNIDADE] {$nomeExibicao} | Termo: '{$termoEncontrado}' | Localização: {$rotuloPagina}", $logFile);
+                    } else {
+                        $ocorrenciasAgrupadas[$chave]['paginas'][] = $numPagina;
+                        if (!in_array($termoEncontrado, $ocorrenciasAgrupadas[$chave]['termos_lista'])) {
+                            $ocorrenciasAgrupadas[$chave]['termos_lista'][] = $termoEncontrado;
+                        }
                     }
                 }
             }
@@ -632,6 +641,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
             $secao = trim($m['secao_nome'] ?? 'Geral');
 
             $nomeFormatado = trim("{$grade} " . ($nomeGuerra ?: $nomeCompleto));
+            $chave = 'MILITAR_' . $m['id'];
 
             // 1. Busca por SARAM com limites estritos de número
             if (!empty($saram)) {
@@ -639,23 +649,24 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
                 if (strlen($saramDigitos) >= 6) {
                     $regexSaram = '/(?<![0-9])' . preg_quote($saramDigitos, '/') . '(?![0-9])/i';
                     if (preg_match($regexSaram, $txtBruto)) {
-                        $hash = md5("MILITAR_{$m['id']}_SARAM_{$numPagina}");
-
-                        if (!isset($ocorrenciasHashes[$hash])) {
-                            $ocorrenciasHashes[$hash] = true;
-                            $ocItem = [
+                        $termoIdentificado = "SARAM {$saram}";
+                        if (!isset($ocorrenciasAgrupadas[$chave])) {
+                            $ocorrenciasAgrupadas[$chave] = [
                                 'tipo' => 'militar',
                                 'titulo' => "Citação do militar {$nomeFormatado}",
-                                'termo_encontrado' => "SARAM {$saram}",
-                                'pagina' => $rotuloPagina,
-                                'numero_pagina' => $numPagina,
+                                'termo_encontrado' => $termoIdentificado,
+                                'termos_lista' => [$termoIdentificado],
                                 'militar_nome' => $nomeCompleto,
                                 'militar_guerra' => $nomeFormatado,
                                 'militar_saram' => $saram,
-                                'militar_secao' => $secao
+                                'militar_secao' => $secao,
+                                'paginas' => [$numPagina]
                             ];
-                            $ocorrencias[] = $ocItem;
-                            registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} (SARAM: {$saram} | Seção: {$secao}) | Termo: SARAM {$saram} | Localização: {$rotuloPagina}", $logFile);
+                        } else {
+                            $ocorrenciasAgrupadas[$chave]['paginas'][] = $numPagina;
+                            if (!in_array($termoIdentificado, $ocorrenciasAgrupadas[$chave]['termos_lista'])) {
+                                $ocorrenciasAgrupadas[$chave]['termos_lista'][] = $termoIdentificado;
+                            }
                         }
                     }
                 }
@@ -667,32 +678,59 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
                 $regexNome = '/\b' . preg_replace('/\s+/', '\s+', preg_quote($nomeNorm, '/')) . '\b/i';
                 
                 if (preg_match($regexNome, $txtNorm)) {
-                    $hash = md5("MILITAR_{$m['id']}_NOME_{$numPagina}");
-
-                    if (!isset($ocorrenciasHashes[$hash])) {
-                        $ocorrenciasHashes[$hash] = true;
-                        $ocItem = [
+                    $termoIdentificado = $nomeCompleto;
+                    if (!isset($ocorrenciasAgrupadas[$chave])) {
+                        $ocorrenciasAgrupadas[$chave] = [
                             'tipo' => 'militar',
                             'titulo' => "Citação do militar {$nomeFormatado}",
-                            'termo_encontrado' => $nomeCompleto,
-                            'pagina' => $rotuloPagina,
-                            'numero_pagina' => $numPagina,
+                            'termo_encontrado' => $termoIdentificado,
+                            'termos_lista' => [$termoIdentificado],
                             'militar_nome' => $nomeCompleto,
                             'militar_guerra' => $nomeFormatado,
                             'militar_saram' => $saram ?: 'Não inf.',
-                            'militar_secao' => $secao
+                            'militar_secao' => $secao,
+                            'paginas' => [$numPagina]
                         ];
-                        $ocorrencias[] = $ocItem;
-                        registrarLogBca("   [CITAÇÃO MILITAR] {$nomeFormatado} ({$nomeCompleto} | Seção: {$secao}) | Termo: Nome Completo | Localização: {$rotuloPagina}", $logFile);
+                    } else {
+                        $ocorrenciasAgrupadas[$chave]['paginas'][] = $numPagina;
+                        if (!in_array($termoIdentificado, $ocorrenciasAgrupadas[$chave]['termos_lista'])) {
+                            $ocorrenciasAgrupadas[$chave]['termos_lista'][] = $termoIdentificado;
+                        }
                     }
                 }
             }
         }
     }
 
+    // Aglutinação final e montagem dos fatos consolidados
+    $ocorrencias = [];
+    $totalCitacoesGerais = 0;
+
+    foreach ($ocorrenciasAgrupadas as $item) {
+        $paginasUnicas = array_values(array_unique($item['paginas']));
+        sort($paginasUnicas, SORT_NUMERIC);
+        
+        $totalCitacoesItem = count($paginasUnicas);
+        $totalCitacoesGerais += $totalCitacoesItem;
+
+        $item['paginas'] = $paginasUnicas;
+        $item['paginas_formatado'] = formatarListaPaginas($paginasUnicas);
+        $item['termo_encontrado'] = implode(' / ', $item['termos_lista']);
+        $item['total_citacoes'] = $totalCitacoesItem;
+        unset($item['termos_lista']);
+
+        $ocorrencias[] = $item;
+
+        $tipoLog = ($item['tipo'] === 'unidade') ? 'CITAÇÃO UNIDADE' : 'CITAÇÃO MILITAR';
+        $idLog = ($item['tipo'] === 'unidade') ? 'DTCEA-SJ' : "{$item['militar_guerra']} (SARAM: {$item['militar_saram']} | {$item['militar_secao']})";
+        $qtdCitacoesTxt = ($totalCitacoesItem === 1) ? "1 citação" : "{$totalCitacoesItem} citações";
+
+        registrarLogBca("   [{$tipoLog}] {$idLog} | Termo: '{$item['termo_encontrado']}' | Localização: {$item['paginas_formatado']} ({$qtdCitacoesTxt})", $logFile);
+    }
+
     $totalOcorrencias = count($ocorrencias);
     if ($totalOcorrencias > 0) {
-        $resumo = "Encontrada" . ($totalOcorrencias > 1 ? "s {$totalOcorrencias} ocorrências" : " 1 ocorrência") . " para o efetivo/OM do DTCEA-SJ no BCA nº {$bcaNumero}.";
+        $resumo = "Encontrada" . ($totalOcorrencias > 1 ? "s {$totalOcorrencias} ocorrências aglutinadas ({$totalCitacoesGerais} citações no total)" : " 1 ocorrência ({$totalCitacoesGerais} citação)") . " para o efetivo/OM do DTCEA-SJ no BCA nº {$bcaNumero}.";
     } else {
         $resumo = "Nenhuma ocorrência encontrada para os militares cadastrados ou para o termo DTCEA-SJ no BCA nº " . ($bcaNumero ?: 'recente') . ($bcaData ? " de {$bcaData}" : "") . ".";
     }
@@ -707,6 +745,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         'bca_data' => $bcaData,
         'total_paginas' => $totalPaginas,
         'total_ocorrencias' => $totalOcorrencias,
+        'total_citacoes' => $totalCitacoesGerais,
         'total_militares_monitorados' => count($militaresMonitorados),
         'ultima_atualizacao' => date('d/m/Y H:i:s'),
         'tempo_execucao_segundos' => $tempoTotal,
@@ -721,7 +760,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
 
     registrarLogBca("RESUMO DA EXECUÇÃO:", $logFile);
     registrarLogBca("-> Boletim: BCA nº {$bcaNumero} ({$bcaData}) | Total de Páginas: {$totalPaginas}", $logFile);
-    registrarLogBca("-> Ocorrências localizadas: {$totalOcorrencias}", $logFile);
+    registrarLogBca("-> Ocorrências aglutinadas: {$totalOcorrencias} (Total de Citações: {$totalCitacoesGerais})", $logFile);
     registrarLogBca("-> PDF armazenado em: bca/{$latestPdfNome}", $logFile);
     registrarLogBca("-> Cache JSON atualizado em: bca/bca_cache.json", $logFile);
     registrarLogBca("-> Tempo total de processamento: {$tempoTotal}s", $logFile);

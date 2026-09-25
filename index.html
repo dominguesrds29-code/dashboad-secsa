@@ -593,15 +593,15 @@
         }
 
         if (data.success && data.ocorrencias && data.ocorrencias.length > 0) {
-          const qtd = data.ocorrencias.length;
-          const labelCitacoes = qtd === 1 ? '1 Citação' : `${qtd} Citações`;
+          const totalCit = data.total_citacoes || data.ocorrencias.reduce((acc, cur) => acc + (cur.total_citacoes || 1), 0);
+          const labelCitacoes = totalCit === 1 ? '1 Citação' : `${totalCit} Citações`;
           if (totalBadge) {
             totalBadge.className = 'text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300 flex items-center gap-1.5';
             totalBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span> ${labelCitacoes}`;
           }
 
           cardConteudo.innerHTML = data.ocorrencias.map((oc, idx) => `
-            <div class="p-3 rounded-xl bg-white border border-amber-200/90 hover:border-amber-400 hover:shadow-xs transition">
+            <div class="p-3.5 rounded-xl bg-white border border-amber-200/90 hover:border-amber-400 hover:shadow-xs transition">
               <div class="flex items-center justify-between gap-2 mb-2">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${oc.tipo === 'unidade' ? 'bg-indigo-600 text-white' : 'bg-amber-600 text-white'} tracking-wider">
@@ -611,19 +611,27 @@
                     ${oc.militar_guerra || oc.militar_nome}
                   </span>
                 </div>
-                ${oc.pagina || oc.folha ? `
-                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                    <span class="material-symbols-outlined text-xs text-amber-700">menu_book</span>
-                    ${oc.pagina || oc.folha}
+                ${oc.total_citacoes && oc.total_citacoes > 1 ? `
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white shadow-2xs">
+                    ${oc.total_citacoes} citações
                   </span>
                 ` : ''}
               </div>
               
               <div class="text-xs text-slate-700 bg-slate-50/80 p-2.5 rounded-lg border border-slate-200 flex flex-col gap-1.5">
-                <div class="flex items-center justify-between text-[11px]">
-                  <span class="text-slate-500">Termo Localizado:</span>
-                  <span class="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">${oc.termo_encontrado}</span>
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-500 shrink-0">Termo Localizado:</span>
+                  <span class="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200 text-right truncate max-w-[200px]" title="${oc.termo_encontrado}">${oc.termo_encontrado}</span>
                 </div>
+                
+                <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60">
+                  <span class="text-slate-500 shrink-0">Páginas no BCA:</span>
+                  <span class="font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1 text-[11px]">
+                    <span class="material-symbols-outlined text-xs text-amber-700">menu_book</span>
+                    ${oc.paginas_formatado || oc.pagina || 'Pág. N/I'}
+                  </span>
+                </div>
+
                 ${oc.militar_secao && oc.tipo !== 'unidade' ? `
                   <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60 text-slate-500">
                     <span>Seção: <strong class="text-slate-700">${oc.militar_secao}</strong></span>
