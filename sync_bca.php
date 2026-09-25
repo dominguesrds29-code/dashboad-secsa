@@ -99,50 +99,177 @@ function normalizarTextoBusca($str) {
     return trim(preg_replace('/\s+/', ' ', $str));
 }
 
-// 3. Extração de texto do PDF estruturado PÁGINA A PÁGINA
-function extrairPaginasDoPdf($content) {
-    $paginas = [];
-    if (preg_match_all('/stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $streamMatches)) {
-        $pNum = 1;
-        foreach ($streamMatches[1] as $stream) {
-            $uncompressed = @gzuncompress($stream);
-            $tStream = "";
-            if ($uncompressed !== false) {
-                if (strpos($uncompressed, 'Tj') !== false || strpos($uncompressed, 'TJ') !== false || strpos($uncompressed, 'BT') !== false) {
-                    $uncompressed = preg_replace_callback('/\\\\([0-7]{1,3})/', function($m) {
-                        return chr(octdec($m[1]));
-                    }, $uncompressed);
-
-                    if (preg_match_all('/\((.*?)\)\s*Tj/s', $uncompressed, $tMatches)) {
-                        $tStream .= implode(' ', $tMatches[1]) . " ";
+// 3. Extração de texto por página real do PDF (Híbrido: pdftotext CLI + Parser Nativo PageTree)
+function extrairPaginasDoPdf($content, $pdfFilePath = null) {
+    // A. Método 1: pdftotext (Padrão no Linux/Ubuntu e 100% fiel à contagem física de páginas)
+    if ($pdfFilePath && file_exists($pdfFilePath)) {
+        $checkCmd = (stripos(PHP_OS, 'WIN') === 0) ? 'where pdftotext 2>nul' : 'which pdftotext 2>/dev/null';
+        $hasTool = @shell_exec($checkCmd);
+        if (!empty($hasTool)) {
+            $output = @shell_exec('pdftotext "' . $pdfFilePath . '" -');
+            if (!empty($output)) {
+                $rawPages = explode("\x0C", $output);
+                if (end($rawPages) === "") array_pop($rawPages);
+                if (count($rawPages) > 0) {
+                    $paginas = [];
+                    foreach ($rawPages as $idx => $pTxt) {
+                        $pNum = $idx + 1;
+                        $pClean = trim(preg_replace('/\s+/', ' ', $pTxt));
+                        $paginas[$pNum] = [
+                            'pagina' => $pNum,
+                            'texto_bruto' => $pClean,
+                            'texto_norm' => normalizarTextoBusca($pClean)
+                        ];
                     }
-                    if (preg_match_all('/\[(.*?)\]\s*TJ/s', $uncompressed, $tMatches)) {
-                        foreach ($tMatches[1] as $tj) {
-                            if (preg_match_all('/\((.*?)\)/s', $tj, $subMatches)) {
-                                $tStream .= implode('', $subMatches[1]);
-                            }
-                        }
-                        $tStream .= " ";
-                    }
+                    return $paginas;
                 }
-            }
-
-            $tStream = trim(mb_convert_encoding($tStream, 'UTF-8', 'ISO-8859-1'));
-            $tStream = str_replace(['\\(', '\\)', '\\-'], ['(', ')', '-'], $tStream);
-            $tStream = str_replace('\\', '', $tStream);
-            $tStream = preg_replace('/\s+/', ' ', $tStream);
-
-            if (strlen($tStream) > 25) {
-                $paginas[$pNum] = [
-                    'pagina' => $pNum,
-                    'texto_bruto' => $tStream,
-                    'texto_norm' => normalizarTextoBusca($tStream)
-                ];
-                $pNum++;
             }
         }
     }
+
+    // B. Método 2: Parser Nativo de Árvore de Páginas PDF (Resolve /Pages -> /Kids)
+    $objects = [];
+    $streams = [];
+
+    // 1. Objetos diretos
+    if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*(.*?)(?:endobj|stream)/s', $content, $mObjs, PREG_OFFSET_CAPTURE)) {
+        foreach ($mObjs[1] as $idx => $idMatch) {
+            $objNum = (int)$idMatch[0];
+            $objects[$objNum] = $mObjs[3][$idx][0];
+        }
+    }
+
+    // 2. Streams de dados indexados por objNum
+    if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*<<(?:(?!>>).)*?>>\s*stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $mStreams)) {
+        foreach ($mStreams[1] as $idx => $idMatch) {
+            $objNum = (int)$idMatch;
+            $streams[$objNum] = $mStreams[3][$idx];
+        }
+    }
+
+    // 3. Objetos dentro de /Type /ObjStm
+    if (preg_match_all('/(\d+)\s+(\d+)\s+obj\s*<<(?:(?!>>).)*?\/Type\s*\/ObjStm\b(?:(?!>>).)*?\/N\s+(\d+)\b(?:(?!>>).)*?\/First\s+(\d+)\b.*?>>\s*stream[\r\n]+(.*?)[\r\n]+endstream/is', $content, $mObjStm)) {
+        foreach ($mObjStm[5] as $idx => $streamData) {
+            $uncompressed = @gzuncompress($streamData);
+            if ($uncompressed !== false) {
+                $n = (int)$mObjStm[3][$idx];
+                $first = (int)$mObjStm[4][$idx];
+                $header = substr($uncompressed, 0, $first);
+                $body = substr($uncompressed, $first);
+                
+                $pairs = preg_split('/\s+/', trim($header));
+                for ($i = 0; $i < count($pairs); $i += 2) {
+                    if (isset($pairs[$i+1])) {
+                        $numObj = (int)$pairs[$i];
+                        $offset = (int)$pairs[$i+1];
+                        $nextOffset = isset($pairs[$i+3]) ? (int)$pairs[$i+3] : strlen($body);
+                        $objects[$numObj] = substr($body, $offset, $nextOffset - $offset);
+                    }
+                }
+            }
+        }
+    }
+
+    // Coleta recursiva de nós /Page a partir do catálogo raiz /Pages
+    $rootPagesId = null;
+    foreach ($objects as $id => $dict) {
+        if (preg_match('/\/Type\s*\/Catalog\b(?:(?!>>).)*?\/Pages\s+(\d+)\s+(\d+)\s+R/is', $dict, $mRoot)) {
+            $rootPagesId = (int)$mRoot[1];
+            break;
+        }
+    }
+
+    $pageObjectIds = [];
+    if ($rootPagesId) {
+        coletarNosPagina($rootPagesId, $objects, $pageObjectIds);
+    } else {
+        foreach ($objects as $id => $dict) {
+            if (preg_match('/\/Type\s*\/Page\b/i', $dict)) {
+                $pageObjectIds[] = $id;
+            }
+        }
+    }
+
+    $paginas = [];
+    $pNum = 1;
+    foreach ($pageObjectIds as $pageId) {
+        $pDict = $objects[$pageId] ?? '';
+        $pageText = "";
+
+        $contentIds = [];
+        if (preg_match('/\/Contents\s+(\d+)\s+(\d+)\s+R/i', $pDict, $mCont)) {
+            $contentIds[] = (int)$mCont[1];
+        } elseif (preg_match('/\/Contents\s*\[(.*?)\]/is', $pDict, $mContArr)) {
+            if (preg_match_all('/(\d+)\s+\d+\s+R/i', $mContArr[1], $mRefs)) {
+                foreach ($mRefs[1] as $rId) {
+                    $contentIds[] = (int)$rId;
+                }
+            }
+        }
+
+        foreach ($contentIds as $cId) {
+            if (isset($streams[$cId])) {
+                $pageText .= descompactarTextoStreamPdf($streams[$cId]) . " ";
+            }
+        }
+
+        $pageText = trim(mb_convert_encoding($pageText, 'UTF-8', 'ISO-8859-1'));
+        $pageText = str_replace(['\\(', '\\)', '\\-'], ['(', ')', '-'], $pageText);
+        $pageText = str_replace('\\', '', $pageText);
+        $pageText = preg_replace('/\s+/', ' ', $pageText);
+
+        $paginas[$pNum] = [
+            'pagina' => $pNum,
+            'texto_bruto' => $pageText,
+            'texto_norm' => normalizarTextoBusca($pageText)
+        ];
+        $pNum++;
+    }
+
     return $paginas;
+}
+
+function coletarNosPagina($nodeId, &$objects, &$pageObjectIds) {
+    $dict = $objects[$nodeId] ?? '';
+    if (preg_match('/\/Type\s*\/Page\b/i', $dict) && !preg_match('/\/Type\s*\/Pages\b/i', $dict)) {
+        $pageObjectIds[] = $nodeId;
+        return;
+    }
+
+    if (preg_match('/\/Kids\s*\[(.*?)\]/is', $dict, $mKids)) {
+        if (preg_match_all('/(\d+)\s+\d+\s+R/i', $mKids[1], $mRefs)) {
+            foreach ($mRefs[1] as $childId) {
+                coletarNosPagina((int)$childId, $objects, $pageObjectIds);
+            }
+        }
+    }
+}
+
+function descompactarTextoStreamPdf($stream) {
+    $uncompressed = @gzuncompress($stream);
+    $text = "";
+    if ($uncompressed !== false) {
+        $uncompressed = preg_replace_callback('/\\\\([0-7]{1,3})/', function($m) {
+            return chr(octdec($m[1]));
+        }, $uncompressed);
+
+        if (preg_match_all('/\((.*?)\)\s*Tj/s', $uncompressed, $tMatches)) {
+            $text .= implode(' ', $tMatches[1]) . " ";
+        }
+        if (preg_match_all('/\[(.*?)\]\s*TJ/s', $uncompressed, $tMatches)) {
+            foreach ($tMatches[1] as $tj) {
+                if (preg_match_all('/\((.*?)\)/s', $tj, $subMatches)) {
+                    $text .= implode('', $subMatches[1]);
+                }
+            }
+            $text .= " ";
+        }
+    } else {
+        if (preg_match_all('/\((.*?)\)\s*Tj/s', $stream, $tMatches)) {
+            $text .= implode(' ', $tMatches[1]) . " ";
+        }
+    }
+    return $text;
 }
 
 // 4. Download HTTP resiliente
@@ -335,7 +462,6 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     if (!$pdfContent) {
         $files = glob($bcaDir . DIRECTORY_SEPARATOR . 'bca_*.pdf');
         
-        // Fallback: se a pasta bca/ estiver vazia, importa de /tmp ou Downloads
         if (empty($files)) {
             $fallbackDirs = ['/tmp'];
             $home = getenv('HOME') ?: getenv('USERPROFILE');
@@ -388,11 +514,11 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         return $resultadoErro;
     }
 
-    // Extração estruturada do texto do PDF página por página
+    // Extração estruturada do texto do PDF página por página física
     registrarLogBca("Iniciando extração do texto página a página do PDF ({$latestPdfNome})...", $logFile);
-    $paginas = extrairPaginasDoPdf($pdfContent);
+    $paginas = extrairPaginasDoPdf($pdfContent, $caminhoArquivoFinal);
     $totalPaginas = count($paginas);
-    registrarLogBca("-> Total de páginas identificadas e processadas: {$totalPaginas}", $logFile);
+    registrarLogBca("-> Total de páginas físicas identificadas e mapeadas: {$totalPaginas}", $logFile);
 
     // Identificação de Número e Data do BCA caso não obtidos via HTML
     $primeiraPaginaTxt = $paginas[1]['texto_bruto'] ?? '';
@@ -452,7 +578,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         registrarLogBca("[ERRO DB] Falha ao conectar ao banco MySQL: " . $e->getMessage(), $logFile);
     }
 
-    // Processamento estrito e focado das ocorrências por PÁGINA DO PDF
+    // Processamento estrito e focado das ocorrências por PÁGINA EXATA DO PDF
     $ocorrencias = [];
     $ocorrenciasHashes = [];
 
@@ -464,7 +590,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         '/\bDESTACAMENTO\s+DE\s+CONTROLE\s+DO\s+ESPA[ÇC]O\s+A[ÉE]REO\s+DE\s+S[ÃA]O\s+JOS[ÉE]\s+DOS\s+CAMPOS\b/iu' => 'DESTACAMENTO DE CONTROLE DO ESPAÇO AÉREO DE SÃO JOSÉ DOS CAMPOS'
     ];
 
-    // Varredura página por página
+    // Varredura página por página física
     foreach ($paginas as $numPagina => $pData) {
         $txtBruto = $pData['texto_bruto'];
         $txtNorm = $pData['texto_norm'];
