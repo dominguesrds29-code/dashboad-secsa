@@ -1,12 +1,13 @@
 {
     "success": true,
     "arquivo": "bca_162_22-09-2026.pdf",
+    "caminho_arquivo": "bca\/bca_162_22-09-2026.pdf",
     "bca_numero": "162",
     "bca_data": "22\/09\/2026",
     "total_ocorrencias": 0,
     "total_militares_monitorados": 12,
-    "ultima_atualizacao": "25\/09\/2026 08:36:17",
-    "tempo_execucao_segundos": 0.42,
+    "ultima_atualizacao": "25\/09\/2026 09:03:11",
+    "tempo_execucao_segundos": 0.22,
     "status_download": "Não executado",
     "resumo": "Nenhuma ocorrência encontrada para os militares cadastrados ou para o termo DTCEA-SJ no BCA nº 162 de 22\/09\/2026.",
     "ocorrencias": []

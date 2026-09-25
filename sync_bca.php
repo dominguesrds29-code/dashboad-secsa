@@ -5,20 +5,55 @@
 
 date_default_timezone_set('America/Sao_Paulo');
 
-// Diretório base
+// Diretório base exclusivo para os arquivos do BCA
 $baseDir = __DIR__;
 $bcaDir = $baseDir . DIRECTORY_SEPARATOR . 'bca';
 if (!is_dir($bcaDir)) {
     @mkdir($bcaDir, 0777, true);
+    @chmod($bcaDir, 0777);
 }
 
 $logFile = $bcaDir . DIRECTORY_SEPARATOR . 'bca_sync.log';
 $cacheFile = $bcaDir . DIRECTORY_SEPARATOR . 'bca_cache.json';
 
+// Função de gerenciamento e rotação de log (limite de 10 MB)
+function rotacionarLogSeNecessario($logFile, $maxBytes = 10485760) {
+    if (!file_exists($logFile)) return;
+    
+    $tamanhoAtual = @filesize($logFile);
+    if ($tamanhoAtual === false || $tamanhoAtual < $maxBytes) return;
+
+    $conteudo = @file_get_contents($logFile);
+    if (empty($conteudo)) return;
+
+    // Remove os blocos/dias mais antigos até que o tamanho fique dentro do limite seguro (8 MB)
+    $delimitador = "==================================================================";
+    $blocos = explode($delimitador, $conteudo);
+    $tamanhoAlvo = (int)($maxBytes * 0.8); // Mantém os 80% mais recentes
+
+    while (count($blocos) > 2 && strlen($conteudo) > $tamanhoAlvo) {
+        array_shift($blocos);
+        $conteudo = implode($delimitador, $blocos);
+    }
+
+    // Se ainda exceder por falta de delimitadores, descarta linhas mais antigas
+    if (strlen($conteudo) > $tamanhoAlvo) {
+        $linhas = explode(PHP_EOL, $conteudo);
+        while (count($linhas) > 50 && strlen(implode(PHP_EOL, $linhas)) > $tamanhoAlvo) {
+            array_shift($linhas);
+        }
+        $conteudo = implode(PHP_EOL, $linhas);
+    }
+
+    $avisoRotacao = "[" . date('Y-m-d H:i:s') . "] [SISTEMA] Rotação de log: informações mais antigas foram apagadas para manter o arquivo abaixo de 10 MB." . PHP_EOL;
+    @file_put_contents($logFile, $avisoRotacao . ltrim($conteudo));
+}
+
 // Função de log estruturado
 function registrarLogBca($mensagem, $logFile) {
+    rotacionarLogSeNecessario($logFile, 10485760); // 10 MB (10 * 1024 * 1024 bytes)
     $linha = "[" . date('Y-m-d H:i:s') . "] " . $mensagem . PHP_EOL;
-    file_put_contents($logFile, $linha, FILE_APPEND);
+    @file_put_contents($logFile, $linha, FILE_APPEND);
     if (php_sapi_name() === 'cli') {
         echo $linha;
     }
@@ -148,39 +183,15 @@ function downloadHttp($url, $timeout = 7) {
     return ['success' => false, 'code' => $httpCode, 'data' => null, 'error' => $errorMsg ?: 'Falha na conexão'];
 }
 
-// 5. Diretórios permitidos para gravação e leitura de PDFs
-function getBcaDirectories() {
-    $dirs = [];
-    
-    // Pasta bca do próprio projeto
-    $localBca = __DIR__ . DIRECTORY_SEPARATOR . 'bca';
-    if (is_dir($localBca)) {
-        $dirs[] = $localBca;
-    }
-
-    // Diretório /tmp do Linux
-    if (is_dir('/tmp')) {
-        $dirs[] = '/tmp';
-    }
-    
-    // Diretório Downloads do usuário (Linux / Windows)
-    $home = getenv('HOME') ?: getenv('USERPROFILE');
-    if ($home && is_dir($home . '/Downloads')) {
-        $dirs[] = $home . '/Downloads';
-    }
-    
-    // Diretório temporário do sistema operacional
-    $sysTemp = sys_get_temp_dir();
-    if ($sysTemp && is_dir($sysTemp)) {
-        $dirs[] = rtrim($sysTemp, '/\\');
-    }
-
-    return array_unique($dirs);
-}
-
-// 6. Função principal de execução da sincronização e análise
+// 5. Função principal de execução da sincronização e análise
 function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_name, $db_user, $db_pass) {
     $inicioExecucao = microtime(true);
+    $bcaDir = dirname($cacheFile);
+    
+    if (!is_dir($bcaDir)) {
+        @mkdir($bcaDir, 0777, true);
+        @chmod($bcaDir, 0777);
+    }
     
     registrarLogBca("==================================================================", $logFile);
     registrarLogBca("INÍCIO DA ROTINA AUTOMÁTICA DE SINCRONIZAÇÃO E ANÁLISE DO BCA (06:00)", $logFile);
@@ -235,7 +246,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         }
         registrarLogBca("-> Boletim identificado no SISBCA: BCA nº " . ($bcaNumero ?: 'Desconhecido') . " de " . ($bcaData ?: 'Data não identificada'), $logFile);
     } else {
-        registrarLogBca("[AVISO] Servidores do SISBCA (CENDOC) inacessíveis no momento. Buscando arquivo em cache local...", $logFile);
+        registrarLogBca("[AVISO] Servidores do SISBCA (CENDOC) inacessíveis no momento. Buscando arquivo na pasta bca/...", $logFile);
     }
 
     if (!$bcaPdfHref && $bcaNumero && $bcaData) {
@@ -259,43 +270,51 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         $pdfUrl = null;
     }
 
-    $dirs = getBcaDirectories();
     $pdfContent = null;
     $latestPdfNome = 'bca_desconhecido.pdf';
     $caminhoArquivoFinal = null;
 
-    // Se identificou o arquivo do SISBCA, verifica se já foi baixado
+    // O destino e leitura são EXCLUSIVOS da pasta bca/ do projeto
     if ($pdfFileName) {
-        foreach ($dirs as $d) {
-            $pathVerificar = rtrim($d, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
-            if (file_exists($pathVerificar) && filesize($pathVerificar) > 50000) {
-                $statusDownload = "Arquivo já existente em cache local ({$pathVerificar})";
-                $caminhoArquivoFinal = $pathVerificar;
-                $pdfContent = file_get_contents($pathVerificar);
-                $latestPdfNome = $pdfFileName;
-                registrarLogBca("-> {$statusDownload}", $logFile);
-                break;
+        $pathVerificar = $bcaDir . DIRECTORY_SEPARATOR . $pdfFileName;
+        
+        // 1. Verifica se já está na pasta bca/
+        if (file_exists($pathVerificar) && filesize($pathVerificar) > 50000) {
+            $statusDownload = "Arquivo já existente em bca/{$pdfFileName}";
+            $caminhoArquivoFinal = $pathVerificar;
+            $pdfContent = file_get_contents($pathVerificar);
+            $latestPdfNome = $pdfFileName;
+            registrarLogBca("-> {$statusDownload}", $logFile);
+        } else {
+            // Se existia em /tmp de execuções anteriores, migra para a pasta bca/
+            $tmpPath = '/tmp/' . $pdfFileName;
+            if (file_exists($tmpPath) && filesize($tmpPath) > 50000) {
+                @copy($tmpPath, $pathVerificar);
+                @chmod($pathVerificar, 0777);
+                if (file_exists($pathVerificar)) {
+                    $pdfContent = file_get_contents($pathVerificar);
+                    $caminhoArquivoFinal = $pathVerificar;
+                    $latestPdfNome = $pdfFileName;
+                    $statusDownload = "PDF importado com sucesso para pasta bca/{$pdfFileName}";
+                    registrarLogBca("-> {$statusDownload}", $logFile);
+                }
             }
         }
 
-        // Se ainda não temos o conteúdo e temos URL, baixa o PDF
+        // 2. Se ainda não temos o conteúdo, faz o download diretamente para a pasta bca/
         if (!$pdfContent && $pdfUrl) {
             registrarLogBca("-> Baixando novo PDF do BCA a partir de: {$pdfUrl} ...", $logFile);
-            $resPdf = downloadHttp($pdfUrl, 20);
+            $resPdf = downloadHttp($pdfUrl, 25);
             if ($resPdf['success'] && strlen($resPdf['data']) >= 50000) {
                 $pdfContent = $resPdf['data'];
                 $latestPdfNome = $pdfFileName;
+                $caminhoSalvar = $bcaDir . DIRECTORY_SEPARATOR . $pdfFileName;
                 
-                // Salva na pasta bca local e em /tmp/downloads
-                foreach ($dirs as $d) {
-                    $caminhoSalvar = rtrim($d, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
-                    if (@file_put_contents($caminhoSalvar, $pdfContent) !== false) {
-                        @chmod($caminhoSalvar, 0777);
-                        $caminhoArquivoFinal = $caminhoSalvar;
-                        break;
-                    }
-                }
-                $statusDownload = "Download concluído com sucesso e salvo em: " . ($caminhoArquivoFinal ?: 'memória');
+                @file_put_contents($caminhoSalvar, $pdfContent);
+                @chmod($caminhoSalvar, 0777);
+                $caminhoArquivoFinal = $caminhoSalvar;
+
+                $statusDownload = "Download concluído com sucesso e salvo em: bca/{$pdfFileName}";
                 registrarLogBca("-> {$statusDownload} (Tamanho: " . round(strlen($pdfContent) / 1024, 1) . " KB)", $logFile);
             } else {
                 $statusDownload = "Falha no download: " . ($resPdf['error'] ?: 'Arquivo incompleto ou inacessível');
@@ -304,16 +323,31 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
         }
     }
 
-    // Se ainda não temos PDF do CENDOC, busca o PDF mais recente disponível localmente
+    // 3. Se ainda não temos PDF, busca o PDF mais recente presente exclusivamente na pasta bca/
     if (!$pdfContent) {
-        $files = [];
-        foreach ($dirs as $d) {
-            $encontrados = glob(rtrim($d, '/\\') . DIRECTORY_SEPARATOR . 'bca_*.pdf');
-            if (!empty($encontrados)) {
-                $files = array_merge($files, $encontrados);
+        $files = glob($bcaDir . DIRECTORY_SEPARATOR . 'bca_*.pdf');
+        
+        // Fallback: se a pasta bca/ estiver vazia, importa de /tmp ou Downloads
+        if (empty($files)) {
+            $fallbackDirs = ['/tmp'];
+            $home = getenv('HOME') ?: getenv('USERPROFILE');
+            if ($home && is_dir($home . '/Downloads')) {
+                $fallbackDirs[] = $home . '/Downloads';
             }
+            foreach ($fallbackDirs as $fDir) {
+                $foundExt = glob(rtrim($fDir, '/\\') . DIRECTORY_SEPARATOR . 'bca_*.pdf');
+                if (!empty($foundExt)) {
+                    foreach ($foundExt as $fExt) {
+                        $destFile = $bcaDir . DIRECTORY_SEPARATOR . basename($fExt);
+                        if (!file_exists($destFile)) {
+                            @copy($fExt, $destFile);
+                            @chmod($destFile, 0777);
+                        }
+                    }
+                }
+            }
+            $files = glob($bcaDir . DIRECTORY_SEPARATOR . 'bca_*.pdf');
         }
-        $files = array_unique($files);
 
         if (!empty($files)) {
             usort($files, function($a, $b) {
@@ -328,21 +362,21 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
             $caminhoArquivoFinal = $files[0];
             $pdfContent = file_get_contents($files[0]);
             $latestPdfNome = basename($files[0]);
-            registrarLogBca("-> Utilizando arquivo local mais recente encontrado: {$caminhoArquivoFinal}", $logFile);
+            registrarLogBca("-> Utilizando arquivo encontrado na pasta bca/: {$latestPdfNome}", $logFile);
         }
     }
 
     if (!$pdfContent) {
-        registrarLogBca("[FALHA CRÍTICA] Nenhum boletim PDF disponível para análise.", $logFile);
+        registrarLogBca("[FALHA CRÍTICA] Nenhum boletim PDF disponível na pasta bca/ para análise.", $logFile);
         $resultadoErro = [
             'success' => false,
-            'message' => 'Nenhum boletim PDF disponível para análise.',
+            'message' => 'Nenhum boletim PDF disponível na pasta bca/ para análise.',
             'ultima_atualizacao' => date('d/m/Y H:i:s'),
             'status_download' => $statusDownload,
             'total_ocorrencias' => 0,
             'ocorrencias' => []
         ];
-        file_put_contents($cacheFile, json_encode($resultadoErro, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        @file_put_contents($cacheFile, json_encode($resultadoErro, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         return $resultadoErro;
     }
 
@@ -550,6 +584,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     $resultadoFinal = [
         'success' => true,
         'arquivo' => $latestPdfNome,
+        'caminho_arquivo' => 'bca/' . $latestPdfNome,
         'bca_numero' => $bcaNumero,
         'bca_data' => $bcaData,
         'total_ocorrencias' => $totalOcorrencias,
@@ -562,12 +597,14 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     ];
 
     // Grava no arquivo de cache JSON
-    file_put_contents($cacheFile, json_encode($resultadoFinal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    @file_put_contents($cacheFile, json_encode($resultadoFinal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    @chmod($cacheFile, 0777);
 
     registrarLogBca("RESUMO DA EXECUÇÃO:", $logFile);
     registrarLogBca("-> Boletim: BCA nº {$bcaNumero} ({$bcaData})", $logFile);
     registrarLogBca("-> Ocorrências localizadas: {$totalOcorrencias}", $logFile);
-    registrarLogBca("-> Cache JSON atualizado em: {$cacheFile}", $logFile);
+    registrarLogBca("-> PDF armazenado em: bca/{$latestPdfNome}", $logFile);
+    registrarLogBca("-> Cache JSON atualizado em: bca/bca_cache.json", $logFile);
     registrarLogBca("-> Tempo total de processamento: {$tempoTotal}s", $logFile);
     registrarLogBca("[SUCESSO] Sincronização e análise concluídas com êxito.", $logFile);
     registrarLogBca("==================================================================" . PHP_EOL, $logFile);
