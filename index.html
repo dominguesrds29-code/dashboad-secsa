@@ -280,7 +280,8 @@
                 <span class="material-symbols-outlined text-amber-600 text-xl">menu_book</span>
                 Publicou no BCA
               </h3>
-              <span id="bca-numero-card-badge" class="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
+              <span id="bca-numero-card-badge"
+                class="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
                 Boletim Ostensivo
               </span>
             </div>
@@ -379,9 +380,10 @@
     class="fixed bottom-0 left-0 right-0 z-50 h-12 bg-white border-fab-dark shadow-2xl flex items-center overflow-hidden border-t">
     <div class="h-full bg-fab-navy text-white px-5 flex items-center gap-2 shrink-0 z-20 border-r border-blue-900">
       <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-      <span class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-cyan-300 flex items-center gap-1.5">
+      <span
+        class="font-bold text-xs tracking-wider uppercase whitespace-nowrap text-cyan-300 flex items-center gap-1.5">
         <span class="material-symbols-outlined text-sm text-cyan-300">routine</span>
-        Previsão do Tempo • São José dos Campos-SP
+        Previsão do Tempo
       </span>
     </div>
     <div class="flex-1 overflow-hidden relative bg-slate-900 text-slate-200 h-full flex items-center">
@@ -591,9 +593,11 @@
         }
 
         if (data.success && data.ocorrencias && data.ocorrencias.length > 0) {
+          const qtd = data.ocorrencias.length;
+          const labelCitacoes = qtd === 1 ? '1 Citação' : `${qtd} Citações`;
           if (totalBadge) {
             totalBadge.className = 'text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300 flex items-center gap-1.5';
-            totalBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span> ${data.ocorrencias.length} Citação(ões)`;
+            totalBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span> ${labelCitacoes}`;
           }
 
           cardConteudo.innerHTML = data.ocorrencias.map((oc, idx) => `
