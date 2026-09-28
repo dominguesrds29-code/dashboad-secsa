@@ -406,8 +406,9 @@ try {
     }
 
     // 6. Alertas de Inspeções de Saúde a Vencer (Próximos 90 dias / Vencidas)
+    // Baseado na Validade Insp. Saúde (ou Realização + 1 ano) de todos os militares ativos no banco efetivosj
     $alertasInspecao = [];
-    if ($hasValidadeInsp) {
+    if ($hasValidadeInsp || $hasDataInsp) {
         try {
             $stmtInsp = $db->query("
                 SELECT 
@@ -417,16 +418,17 @@ try {
                     " . ($hasSaram ? "u.saram," : "'' as saram,") . "
                     " . ($hasSpecialty ? "u.specialty," : "'' as specialty,") . "
                     " . ($hasDataInsp ? "u.data_insp_saude," : "NULL as data_insp_saude,") . "
-                    u.validade_insp_saude,
+                    " . ($hasValidadeInsp ? "u.validade_insp_saude," : "NULL as validade_insp_saude,") . "
                     s.`$secCol` as secao
                 FROM users u
                 LEFT JOIN `$secTable` s ON u.section_id = s.id
                 WHERE 1=1
                   $whereDeleted
-                  AND u.validade_insp_saude IS NOT NULL 
-                  AND u.validade_insp_saude != ''
-                  AND u.validade_insp_saude != '0000-00-00'
-                ORDER BY u.validade_insp_saude ASC
+                  AND (
+                      (" . ($hasValidadeInsp ? "u.validade_insp_saude IS NOT NULL AND u.validade_insp_saude != '' AND u.validade_insp_saude != '0000-00-00'" : "1=0") . ")
+                      OR
+                      (" . ($hasDataInsp ? "u.data_insp_saude IS NOT NULL AND u.data_insp_saude != '' AND u.data_insp_saude != '0000-00-00'" : "1=0") . ")
+                  )
             ");
             $inspecoesRaw = $stmtInsp->fetchAll();
 
@@ -434,9 +436,17 @@ try {
 
             foreach ($inspecoesRaw as $m) {
                 $valStr = trim($m['validade_insp_saude'] ?? '');
-                if (empty($valStr)) continue;
+                $dataInspStr = trim($m['data_insp_saude'] ?? '');
 
                 $valObj = parseDataValidadeFlexible($valStr);
+                $dtInspObj = parseDataValidadeFlexible($dataInspStr);
+
+                // Se a validade estiver vazia mas houver data de realização, calcula validade como +1 ano
+                if (!$valObj && $dtInspObj) {
+                    $valObj = clone $dtInspObj;
+                    $valObj->modify('+1 year');
+                }
+
                 if (!$valObj) continue;
 
                 $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
@@ -487,7 +497,7 @@ try {
                         'saram' => $m['saram'] ?? '',
                         'secao' => abreviarNomeSecao($m['secao']),
                         'secao_original' => $m['secao'] ?? 'DTCEA-SJ',
-                        'data_insp_saude' => !empty($m['data_insp_saude']) ? date('d/m/Y', strtotime($m['data_insp_saude'])) : null,
+                        'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
                         'validade_insp_saude' => $valObj->format('d/m/Y'),
                         'validade_iso' => $valObj->format('Y-m-d'),
                         'dias_restantes' => $diffDays,
@@ -508,78 +518,6 @@ try {
         }
     }
 
-    // 7. Prazos Críticos e Entregas Administrativas (tabela prazos_criticos se existir)
-    $prazosCriticos = [];
-    try {
-        if (in_array('prazos_criticos', $tables)) {
-            $stmtPrazos = $db->query("
-                SELECT * FROM prazos_criticos 
-                WHERE status != 'concluido' AND status != 'cancelado' 
-                ORDER BY data_limite ASC, hora_limite ASC
-            ");
-            $prazosRaw = $stmtPrazos->fetchAll();
-            $hojeObj = new DateTime('today');
-
-            foreach ($prazosRaw as $pz) {
-                $dataLimStr = trim($pz['data_limite'] ?? '');
-                if (empty($dataLimStr)) continue;
-
-                $dataLimObj = parseDataValidadeFlexible($dataLimStr);
-                if (!$dataLimObj) continue;
-
-                $diffDays = (int)$hojeObj->diff($dataLimObj)->format('%r%a');
-
-                $statusTipo = 'valida';
-                $statusClass = 'bg-blue-50/50 border-blue-200';
-                $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-
-                if ($diffDays < 0) {
-                    $statusTipo = 'vencida';
-                    $diasVenc = abs($diffDays);
-                    $statusClass = 'bg-rose-50/60 border-rose-200';
-                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                    $urgenciaTexto = $diasVenc === 1 ? "Vencido há 1 dia" : "Vencido há {$diasVenc} dias";
-                } elseif ($diffDays === 0) {
-                    $statusTipo = 'hoje';
-                    $statusClass = 'bg-rose-100/70 border-rose-300';
-                    $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
-                    $urgenciaTexto = "Vence Hoje!";
-                } elseif ($diffDays <= 30) {
-                    $statusTipo = 'critico';
-                    $statusClass = 'bg-amber-50/50 border-amber-200';
-                    $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
-                    $urgenciaTexto = "Vence em {$diffDays}d";
-                }
-
-                $prazosCriticos[] = [
-                    'tipo_item' => 'prazo_processo',
-                    'id' => (int)$pz['id'],
-                    'titulo' => $pz['titulo'],
-                    'descricao' => $pz['descricao'] ?? '',
-                    'orgao_destino' => $pz['orgao_destino'] ?? 'DTCEA-SJ',
-                    'responsavel' => $pz['responsavel_nome'] ?? 'SECSA',
-                    'data_limite' => $dataLimObj->format('d/m/Y'),
-                    'hora_limite' => !empty($pz['hora_limite']) ? substr($pz['hora_limite'], 0, 5) : null,
-                    'validade_iso' => $dataLimObj->format('Y-m-d'),
-                    'dias_restantes' => $diffDays,
-                    'status_tipo' => $statusTipo,
-                    'status_class' => $statusClass,
-                    'urgencia_badge_class' => $urgenciaBadgeClass,
-                    'urgencia_texto' => $urgenciaTexto
-                ];
-            }
-        }
-    } catch (Exception $e) {
-        error_log("Erro na busca de prazos criticos: " . $e->getMessage());
-    }
-
-    // Lista unificada de todos os prazos e entregas para o card
-    $todosPrazos = array_merge($alertasInspecao, $prazosCriticos);
-    usort($todosPrazos, function($a, $b) {
-        return strcmp($a['validade_iso'], $b['validade_iso']);
-    });
-
     echo json_encode([
         'success' => true,
         'timestamp' => time(),
@@ -596,16 +534,12 @@ try {
             'total_respondido' => $totalRespondido,
             'taxa_presenca' => $taxaPresenca,
             'taxa_prontidao_total' => $taxaProntidaoTotal,
-            'total_inspecoes_alerta' => count($alertasInspecao),
-            'total_prazos_criticos' => count($prazosCriticos),
-            'total_alertas_prazos' => count($todosPrazos)
+            'total_inspecoes_alerta' => count($alertasInspecao)
         ],
         'secoes' => $secoes,
         'militares_afastados' => $militaresAfastados,
         'efetivo_detalhado' => $efetivoDetalhado,
-        'alertas_inspecao' => $alertasInspecao,
-        'prazos_criticos' => $prazosCriticos,
-        'todos_prazos' => $todosPrazos
+        'alertas_inspecao' => $alertasInspecao
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
 } catch (PDOException $e) {
