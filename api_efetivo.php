@@ -8,30 +8,44 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 
 date_default_timezone_set('America/Sao_Paulo');
 
-// Função auxiliar para carregar .env do projeto ctr_efetivo se existir
+// Função auxiliar para carregar .env de múltiplos caminhos possíveis
 function carregarEnv($caminho) {
-    if (!file_exists($caminho)) return;
+    if (!file_exists($caminho)) return false;
     $linhas = file($caminho, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($linhas as $linha) {
-        if (strpos(trim($linha), '#') === 0) continue;
+        $linha = trim($linha);
+        if ($linha === '' || strpos($linha, '#') === 0) continue;
         $partes = explode('=', $linha, 2);
         if (count($partes) === 2) {
             $nome = trim($partes[0]);
             $valor = trim(trim($partes[1]), "\"'");
             putenv("$nome=$valor");
             $_ENV[$nome] = $valor;
+            $_SERVER[$nome] = $valor;
         }
+    }
+    return true;
+}
+
+// Procura o .env nos caminhos padrões do ctr_efetivo ou locais
+$possiveisEnv = [
+    __DIR__ . '/../ctr_efetivo/public/.env',
+    __DIR__ . '/../ctr_efetivo/.env',
+    __DIR__ . '/.env',
+    dirname(__DIR__) . '/ctr_efetivo/public/.env',
+    dirname(__DIR__) . '/ctr_efetivo/.env'
+];
+foreach ($possiveisEnv as $envPath) {
+    if (carregarEnv($envPath)) {
+        break;
     }
 }
 
-// Tenta carregar as configurações do .env do ctr_efetivo
-carregarEnv(__DIR__ . '/../ctr_efetivo/public/.env');
-
-$db_host = getenv('DB_HOST') ?: '127.0.0.1';
-$db_port = getenv('DB_PORT') ?: '3306';
-$db_name = getenv('DB_DATABASE') ?: 'efetivosj';
-$db_user = getenv('DB_USERNAME') ?: 'root';
-$db_pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : '';
+$db_host = getenv('DB_HOST') ?: ($_ENV['DB_HOST'] ?? ($_SERVER['DB_HOST'] ?? '127.0.0.1'));
+$db_port = getenv('DB_PORT') ?: ($_ENV['DB_PORT'] ?? ($_SERVER['DB_PORT'] ?? '3306'));
+$db_name = getenv('DB_DATABASE') ?: ($_ENV['DB_DATABASE'] ?? ($_SERVER['DB_DATABASE'] ?? 'efetivosj'));
+$db_user = getenv('DB_USERNAME') ?: ($_ENV['DB_USERNAME'] ?? ($_SERVER['DB_USERNAME'] ?? 'root'));
+$db_pass = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : ($_ENV['DB_PASSWORD'] ?? ($_SERVER['DB_PASSWORD'] ?? ''));
 
 $statusMap = [
     'P'   => ['label' => 'Presente',          'tipo' => 'presente',  'class' => 'bg-emerald-50 text-emerald-700 border-emerald-200'],
@@ -118,9 +132,41 @@ try {
         $secCol = 'sigla';
     }
 
+    // Identificar colunas disponíveis na tabela users
+    $userCols = [];
+    try {
+        $userCols = $db->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {}
+
+    $hasDeletedAt = in_array('deleted_at', $userCols);
+    $hasEscala = in_array('escala', $userCols);
+    $hasValidadeInsp = in_array('validade_insp_saude', $userCols);
+    $hasDataInsp = in_array('data_insp_saude', $userCols);
+    $hasSpecialty = in_array('specialty', $userCols);
+    $hasWarName = in_array('war_name', $userCols);
+    $hasGrade = in_array('grade', $userCols);
+    $hasSaram = in_array('saram', $userCols);
+
+    // Se faltar colunas críticas de inspeção, tenta criar dinamicamente
+    if (!$hasValidadeInsp) {
+        try {
+            $db->exec("ALTER TABLE users ADD COLUMN validade_insp_saude DATE NULL");
+            $hasValidadeInsp = true;
+        } catch (Exception $e) {}
+    }
+    if (!$hasDataInsp) {
+        try {
+            $db->exec("ALTER TABLE users ADD COLUMN data_insp_saude DATE NULL");
+            $hasDataInsp = true;
+        } catch (Exception $e) {}
+    }
+
     // Filtro para incluir pessoal do expediente e excluir operacionais / sem seção
+    $whereDeleted = $hasDeletedAt ? "AND u.deleted_at IS NULL" : "";
+    $whereEscala = $hasEscala ? "AND u.escala = 0" : "";
+
     $filterExpediente = "
-        AND u.escala = 0 
+        $whereEscala
         AND u.section_id IS NOT NULL 
         AND u.section_id > 1
         AND s.id IS NOT NULL
@@ -129,258 +175,309 @@ try {
     ";
 
     // 1. Total Geral do Efetivo do Expediente
-    $stmtGeral = $db->query("
-        SELECT COUNT(u.id) as total 
-        FROM users u 
-        JOIN `$secTable` s ON u.section_id = s.id 
-        WHERE u.deleted_at IS NULL $filterExpediente
-    ");
-    $totalEfetivo = (int)($stmtGeral->fetch()['total'] ?? 0);
+    $totalEfetivo = 0;
+    try {
+        $stmtGeral = $db->query("
+            SELECT COUNT(u.id) as total 
+            FROM users u 
+            JOIN `$secTable` s ON u.section_id = s.id 
+            WHERE 1=1 $whereDeleted $filterExpediente
+        ");
+        $totalEfetivo = (int)($stmtGeral->fetch()['total'] ?? 0);
+    } catch (Exception $e) {
+        error_log("Erro no calculo do total de efetivo: " . $e->getMessage());
+    }
 
     // 2. Presença Geral do dia Selecionado
-    $stmtPresenca = $db->prepare("
-        SELECT 
-            SUM(CASE WHEN p.status IN ('P', 'EA', 'HO', 'O') THEN 1 ELSE 0 END) as presentes,
-            SUM(CASE WHEN p.status IN ('A', 'PA', 'PB') THEN 1 ELSE 0 END) as ausentes,
-            SUM(CASE WHEN p.status = 'F' THEN 1 ELSE 0 END) as ferias,
-            SUM(CASE WHEN p.status IN ('DM', 'INS', 'LPM', 'D', 'DP') THEN 1 ELSE 0 END) as dm,
-            SUM(CASE WHEN p.status IN ('C', 'M') THEN 1 ELSE 0 END) as afastados,
-            SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as total_respondido
-        FROM presencas p
-        JOIN users u ON p.militar_id = u.id
-        JOIN `$secTable` s ON u.section_id = s.id
-        WHERE p.data = ? 
-          AND u.deleted_at IS NULL 
-          $filterExpediente
-    ");
-    $stmtPresenca->execute([$dataConsulta]);
-    $stats = $stmtPresenca->fetch();
+    $presentes = 0;
+    $ausentes = 0;
+    $ferias = 0;
+    $dm = 0;
+    $afastados = 0;
+    $totalRespondido = 0;
 
-    $presentes = (int)($stats['presentes'] ?? 0);
-    $ausentes = (int)($stats['ausentes'] ?? 0);
-    $ferias = (int)($stats['ferias'] ?? 0);
-    $dm = (int)($stats['dm'] ?? 0);
-    $afastados = (int)($stats['afastados'] ?? 0);
-    $totalRespondido = (int)($stats['total_respondido'] ?? 0);
+    try {
+        $stmtPresenca = $db->prepare("
+            SELECT 
+                SUM(CASE WHEN p.status IN ('P', 'EA', 'HO', 'O') THEN 1 ELSE 0 END) as presentes,
+                SUM(CASE WHEN p.status IN ('A', 'PA', 'PB') THEN 1 ELSE 0 END) as ausentes,
+                SUM(CASE WHEN p.status = 'F' THEN 1 ELSE 0 END) as ferias,
+                SUM(CASE WHEN p.status IN ('DM', 'INS', 'LPM', 'D', 'DP') THEN 1 ELSE 0 END) as dm,
+                SUM(CASE WHEN p.status IN ('C', 'M') THEN 1 ELSE 0 END) as afastados,
+                SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as total_respondido
+            FROM presencas p
+            JOIN users u ON p.militar_id = u.id
+            JOIN `$secTable` s ON u.section_id = s.id
+            WHERE p.data = ? 
+              $whereDeleted 
+              $filterExpediente
+        ");
+        $stmtPresenca->execute([$dataConsulta]);
+        $stats = $stmtPresenca->fetch();
+
+        $presentes = (int)($stats['presentes'] ?? 0);
+        $ausentes = (int)($stats['ausentes'] ?? 0);
+        $ferias = (int)($stats['ferias'] ?? 0);
+        $dm = (int)($stats['dm'] ?? 0);
+        $afastados = (int)($stats['afastados'] ?? 0);
+        $totalRespondido = (int)($stats['total_respondido'] ?? 0);
+    } catch (Exception $e) {
+        error_log("Erro no calculo de presenças: " . $e->getMessage());
+    }
 
     // Taxa de prontidão: se houver chamadas respondidas, calcula em relação aos respondidos ou total
     $taxaPresenca = $totalRespondido > 0 ? round(($presentes / $totalRespondido) * 100, 1) : 0;
     $taxaProntidaoTotal = $totalEfetivo > 0 ? round(($presentes / $totalEfetivo) * 100, 1) : 0;
 
     // 3. Detalhamento por Seção
-    $stmtSecoes = $db->prepare("
-        SELECT 
-            s.id as secao_id,
-            s.`$secCol` as secao,
-            COUNT(u.id) as total_secao,
-            SUM(CASE WHEN p.status IN ('P', 'EA', 'HO', 'O') THEN 1 ELSE 0 END) as presentes_secao,
-            SUM(CASE WHEN p.status IN ('A', 'PA', 'PB') THEN 1 ELSE 0 END) as ausentes_secao,
-            SUM(CASE WHEN p.status = 'F' THEN 1 ELSE 0 END) as ferias_secao,
-            SUM(CASE WHEN p.status IN ('DM', 'INS', 'LPM', 'D', 'DP') THEN 1 ELSE 0 END) as dm_secao,
-            SUM(CASE WHEN p.status IN ('C', 'M') THEN 1 ELSE 0 END) as afastados_secao,
-            SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as respondidos_secao
-        FROM users u
-        JOIN `$secTable` s ON u.section_id = s.id
-        LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
-        WHERE u.deleted_at IS NULL 
-          $filterExpediente
-        GROUP BY s.id, secao
-        ORDER BY secao ASC
-    ");
-    $stmtSecoes->execute([$dataConsulta]);
-    $secoesRaw = $stmtSecoes->fetchAll();
-
     $secoes = [];
-    foreach ($secoesRaw as $s) {
-        $tot = (int)$s['total_secao'];
-        $pres = (int)$s['presentes_secao'];
-        $perc = $tot > 0 ? round(($pres / $tot) * 100) : 0;
-        $secoes[] = [
-            'id' => (int)$s['secao_id'],
-            'secao' => abreviarNomeSecao($s['secao']),
-            'secao_original' => $s['secao'],
-            'total' => $tot,
-            'presentes' => $pres,
-            'ausentes' => (int)$s['ausentes_secao'],
-            'ferias' => (int)$s['ferias_secao'],
-            'dm' => (int)$s['dm_secao'],
-            'afastados' => (int)$s['afastados_secao'],
-            'respondidos' => (int)$s['respondidos_secao'],
-            'percentual' => $perc
-        ];
+    try {
+        $stmtSecoes = $db->prepare("
+            SELECT 
+                s.id as secao_id,
+                s.`$secCol` as secao,
+                COUNT(u.id) as total_secao,
+                SUM(CASE WHEN p.status IN ('P', 'EA', 'HO', 'O') THEN 1 ELSE 0 END) as presentes_secao,
+                SUM(CASE WHEN p.status IN ('A', 'PA', 'PB') THEN 1 ELSE 0 END) as ausentes_secao,
+                SUM(CASE WHEN p.status = 'F' THEN 1 ELSE 0 END) as ferias_secao,
+                SUM(CASE WHEN p.status IN ('DM', 'INS', 'LPM', 'D', 'DP') THEN 1 ELSE 0 END) as dm_secao,
+                SUM(CASE WHEN p.status IN ('C', 'M') THEN 1 ELSE 0 END) as afastados_secao,
+                SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as respondidos_secao
+            FROM users u
+            JOIN `$secTable` s ON u.section_id = s.id
+            LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
+            WHERE 1=1 
+              $whereDeleted 
+              $filterExpediente
+            GROUP BY s.id, secao
+            ORDER BY secao ASC
+        ");
+        $stmtSecoes->execute([$dataConsulta]);
+        $secoesRaw = $stmtSecoes->fetchAll();
+
+        foreach ($secoesRaw as $s) {
+            $tot = (int)$s['total_secao'];
+            $pres = (int)$s['presentes_secao'];
+            $perc = $tot > 0 ? round(($pres / $tot) * 100) : 0;
+            $secoes[] = [
+                'id' => (int)$s['secao_id'],
+                'secao' => abreviarNomeSecao($s['secao']),
+                'secao_original' => $s['secao'],
+                'total' => $tot,
+                'presentes' => $pres,
+                'ausentes' => (int)$s['ausentes_secao'],
+                'ferias' => (int)$s['ferias_secao'],
+                'dm' => (int)$s['dm_secao'],
+                'afastados' => (int)$s['afastados_secao'],
+                'respondidos' => (int)$s['respondidos_secao'],
+                'percentual' => $perc
+            ];
+        }
+    } catch (Exception $e) {
+        error_log("Erro no calculo de secoes: " . $e->getMessage());
     }
 
     // 4. Militares Afastados / Condições Especiais Hoje
-    $stmtAfastados = $db->prepare("
-        SELECT 
-            u.id, u.name, u.war_name, u.grade, u.saram,
-            s.`$secCol` as secao, 
-            p.status
-        FROM users u
-        JOIN presencas p ON u.id = p.militar_id
-        JOIN `$secTable` s ON u.section_id = s.id
-        WHERE p.data = ? 
-          AND p.status NOT IN ('P', 'EA', 'HO', 'O')
-          AND u.deleted_at IS NULL 
-          $filterExpediente
-        ORDER BY p.status ASC, secao ASC, u.name ASC
-    ");
-    $stmtAfastados->execute([$dataConsulta]);
-    $afastadosRaw = $stmtAfastados->fetchAll();
-
     $militaresAfastados = [];
-    foreach ($afastadosRaw as $m) {
-        $st = $m['status'];
-        $stInfo = $statusMap[$st] ?? [
-            'label' => $st,
-            'tipo'  => 'outro',
-            'class' => 'bg-slate-100 text-slate-700 border-slate-200'
-        ];
+    try {
+        $stmtAfastados = $db->prepare("
+            SELECT 
+                u.id, u.name, 
+                " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
+                " . ($hasGrade ? "u.grade," : "'' as grade,") . "
+                " . ($hasSaram ? "u.saram," : "'' as saram,") . "
+                s.`$secCol` as secao, 
+                p.status
+            FROM users u
+            JOIN presencas p ON u.id = p.militar_id
+            JOIN `$secTable` s ON u.section_id = s.id
+            WHERE p.data = ? 
+              AND p.status NOT IN ('P', 'EA', 'HO', 'O')
+              $whereDeleted 
+              $filterExpediente
+            ORDER BY p.status ASC, secao ASC, u.name ASC
+        ");
+        $stmtAfastados->execute([$dataConsulta]);
+        $afastadosRaw = $stmtAfastados->fetchAll();
 
-        $militaresAfastados[] = [
-            'id' => (int)$m['id'],
-            'nome_completo' => $m['name'],
-            'nome_formatado' => formatarMilitar($m),
-            'grade' => $m['grade'] ?? '',
-            'war_name' => $m['war_name'] ?? '',
-            'saram' => $m['saram'] ?? '',
-            'secao' => abreviarNomeSecao($m['secao']),
-            'secao_original' => $m['secao'],
-            'status' => $st,
-            'status_label' => $stInfo['label'],
-            'status_tipo' => $stInfo['tipo'],
-            'status_class' => $stInfo['class']
-        ];
+        foreach ($afastadosRaw as $m) {
+            $st = $m['status'];
+            $stInfo = $statusMap[$st] ?? [
+                'label' => $st,
+                'tipo'  => 'outro',
+                'class' => 'bg-slate-100 text-slate-700 border-slate-200'
+            ];
+
+            $militaresAfastados[] = [
+                'id' => (int)$m['id'],
+                'nome_completo' => $m['name'],
+                'nome_formatado' => formatarMilitar($m),
+                'grade' => $m['grade'] ?? '',
+                'war_name' => $m['war_name'] ?? '',
+                'saram' => $m['saram'] ?? '',
+                'secao' => abreviarNomeSecao($m['secao']),
+                'secao_original' => $m['secao'],
+                'status' => $st,
+                'status_label' => $stInfo['label'],
+                'status_tipo' => $stInfo['tipo'],
+                'status_class' => $stInfo['class']
+            ];
+        }
+    } catch (Exception $e) {
+        error_log("Erro no calculo de afastados: " . $e->getMessage());
     }
 
     // 5. Lista Geral de Militares do Expediente (com status do dia) para visualização rápida
-    $stmtTodos = $db->prepare("
-        SELECT 
-            u.id, u.name, u.war_name, u.grade, u.saram,
-            s.`$secCol` as secao,
-            COALESCE(p.status, 'SEM_CHAMADA') as status
-        FROM users u
-        JOIN `$secTable` s ON u.section_id = s.id
-        LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
-        WHERE u.deleted_at IS NULL 
-          $filterExpediente
-        ORDER BY s.`$secCol` ASC, u.grade DESC, u.name ASC
-    ");
-    $stmtTodos->execute([$dataConsulta]);
-    $todosRaw = $stmtTodos->fetchAll();
-
     $efetivoDetalhado = [];
-    foreach ($todosRaw as $m) {
-        $st = $m['status'];
-        $stInfo = $statusMap[$st] ?? [
-            'label' => $st === 'SEM_CHAMADA' ? 'Pendente' : $st,
-            'tipo'  => $st === 'SEM_CHAMADA' ? 'pendente' : 'outro',
-            'class' => $st === 'SEM_CHAMADA' ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-slate-100 text-slate-700 border-slate-200'
-        ];
+    try {
+        $stmtTodos = $db->prepare("
+            SELECT 
+                u.id, u.name,
+                " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
+                " . ($hasGrade ? "u.grade," : "'' as grade,") . "
+                " . ($hasSaram ? "u.saram," : "'' as saram,") . "
+                s.`$secCol` as secao,
+                COALESCE(p.status, 'SEM_CHAMADA') as status
+            FROM users u
+            JOIN `$secTable` s ON u.section_id = s.id
+            LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
+            WHERE 1=1
+              $whereDeleted 
+              $filterExpediente
+            ORDER BY s.`$secCol` ASC, u.name ASC
+        ");
+        $stmtTodos->execute([$dataConsulta]);
+        $todosRaw = $stmtTodos->fetchAll();
 
-        $efetivoDetalhado[] = [
-            'id' => (int)$m['id'],
-            'nome_formatado' => formatarMilitar($m),
-            'grade' => $m['grade'] ?? '',
-            'war_name' => $m['war_name'] ?? '',
-            'secao' => abreviarNomeSecao($m['secao']),
-            'secao_original' => $m['secao'],
-            'status' => $st,
-            'status_label' => $stInfo['label'],
-            'status_class' => $stInfo['class']
-        ];
+        foreach ($todosRaw as $m) {
+            $st = $m['status'];
+            $stInfo = $statusMap[$st] ?? [
+                'label' => $st === 'SEM_CHAMADA' ? 'Pendente' : $st,
+                'tipo'  => $st === 'SEM_CHAMADA' ? 'pendente' : 'outro',
+                'class' => $st === 'SEM_CHAMADA' ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-slate-100 text-slate-700 border-slate-200'
+            ];
+
+            $efetivoDetalhado[] = [
+                'id' => (int)$m['id'],
+                'nome_formatado' => formatarMilitar($m),
+                'grade' => $m['grade'] ?? '',
+                'war_name' => $m['war_name'] ?? '',
+                'secao' => abreviarNomeSecao($m['secao']),
+                'secao_original' => $m['secao'],
+                'status' => $st,
+                'status_label' => $stInfo['label'],
+                'status_class' => $stInfo['class']
+            ];
+        }
+    } catch (Exception $e) {
+        error_log("Erro no calculo de efetivo detalhado: " . $e->getMessage());
     }
 
     // 6. Alertas de Inspeções de Saúde a Vencer (Próximos 90 dias / Vencidas)
     // Baseado na Validade Insp. Saúde do sistema de efetivo (ctr_efetivo)
-    $stmtInsp = $db->query("
-        SELECT 
-            u.id, u.name, u.war_name, u.grade, u.saram, u.specialty, u.validade_insp_saude, u.data_insp_saude,
-            s.`$secCol` as secao
-        FROM users u
-        LEFT JOIN `$secTable` s ON u.section_id = s.id
-        WHERE u.deleted_at IS NULL 
-          AND u.validade_insp_saude IS NOT NULL 
-          AND u.validade_insp_saude != ''
-          AND u.validade_insp_saude != '0000-00-00'
-        ORDER BY u.validade_insp_saude ASC
-    ");
-    $inspecoesRaw = $stmtInsp->fetchAll();
-
-    $hojeObj = new DateTime('today');
     $alertasInspecao = [];
+    if ($hasValidadeInsp) {
+        try {
+            $stmtInsp = $db->query("
+                SELECT 
+                    u.id, u.name,
+                    " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
+                    " . ($hasGrade ? "u.grade," : "'' as grade,") . "
+                    " . ($hasSaram ? "u.saram," : "'' as saram,") . "
+                    " . ($hasSpecialty ? "u.specialty," : "'' as specialty,") . "
+                    " . ($hasDataInsp ? "u.data_insp_saude," : "NULL as data_insp_saude,") . "
+                    u.validade_insp_saude,
+                    s.`$secCol` as secao
+                FROM users u
+                LEFT JOIN `$secTable` s ON u.section_id = s.id
+                WHERE 1=1
+                  $whereDeleted
+                  AND u.validade_insp_saude IS NOT NULL 
+                  AND u.validade_insp_saude != ''
+                  AND u.validade_insp_saude != '0000-00-00'
+                ORDER BY u.validade_insp_saude ASC
+            ");
+            $inspecoesRaw = $stmtInsp->fetchAll();
 
-    foreach ($inspecoesRaw as $m) {
-        $valStr = trim($m['validade_insp_saude']);
-        $valObj = DateTime::createFromFormat('Y-m-d', $valStr);
-        if (!$valObj) {
-            $valObj = date_create($valStr);
-        }
-        if (!$valObj) continue;
+            $hojeObj = new DateTime('today');
 
-        $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
+            foreach ($inspecoesRaw as $m) {
+                $valStr = trim($m['validade_insp_saude'] ?? '');
+                if (empty($valStr)) continue;
 
-        // Filtra militares com inspeção até 90 dias (inclui vencidas)
-        if ($diffDays <= 90) {
-            $statusTipo = 'valida';
-            $statusClass = 'bg-blue-50/50 border-blue-200';
-            $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
-            $urgenciaTexto = "Vence em {$diffDays}d";
+                $valObj = DateTime::createFromFormat('Y-m-d', $valStr);
+                if (!$valObj) {
+                    $valObj = date_create($valStr);
+                }
+                if (!$valObj) continue;
 
-            if ($diffDays < 0) {
-                $statusTipo = 'vencida';
-                $diasVenc = abs($diffDays);
-                $statusClass = 'bg-rose-50/60 border-rose-200';
-                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
-            } elseif ($diffDays === 0) {
-                $statusTipo = 'hoje';
-                $statusClass = 'bg-rose-100/70 border-rose-300';
-                $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
-                $urgenciaTexto = "Vence Hoje!";
-            } elseif ($diffDays <= 30) {
-                $statusTipo = 'critico';
-                $statusClass = 'bg-rose-50/50 border-rose-200';
-                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-            } elseif ($diffDays <= 60) {
-                $statusTipo = 'alerta';
-                $statusClass = 'bg-amber-50/50 border-amber-200';
-                $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-            } else {
-                $statusTipo = 'aviso';
-                $statusClass = 'bg-slate-50 border-slate-200';
-                $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
+                $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
+
+                // Filtra militares com inspeção até 90 dias (inclui vencidas)
+                if ($diffDays <= 90) {
+                    $statusTipo = 'valida';
+                    $statusClass = 'bg-blue-50/50 border-blue-200';
+                    $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+
+                    if ($diffDays < 0) {
+                        $statusTipo = 'vencida';
+                        $diasVenc = abs($diffDays);
+                        $statusClass = 'bg-rose-50/60 border-rose-200';
+                        $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                        $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
+                    } elseif ($diffDays === 0) {
+                        $statusTipo = 'hoje';
+                        $statusClass = 'bg-rose-100/70 border-rose-300';
+                        $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
+                        $urgenciaTexto = "Vence Hoje!";
+                    } elseif ($diffDays <= 30) {
+                        $statusTipo = 'critico';
+                        $statusClass = 'bg-rose-50/50 border-rose-200';
+                        $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                        $urgenciaTexto = "Vence em {$diffDays}d";
+                    } elseif ($diffDays <= 60) {
+                        $statusTipo = 'alerta';
+                        $statusClass = 'bg-amber-50/50 border-amber-200';
+                        $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+                        $urgenciaTexto = "Vence em {$diffDays}d";
+                    } else {
+                        $statusTipo = 'aviso';
+                        $statusClass = 'bg-slate-50 border-slate-200';
+                        $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                        $urgenciaTexto = "Vence em {$diffDays}d";
+                    }
+
+                    $alertasInspecao[] = [
+                        'id' => (int)$m['id'],
+                        'nome_completo' => $m['name'],
+                        'nome_guerra' => $m['war_name'] ?? '',
+                        'posto_grad' => $m['grade'] ?? '',
+                        'nome_formatado' => formatarMilitar($m),
+                        'especialidade' => $m['specialty'] ?? '',
+                        'saram' => $m['saram'] ?? '',
+                        'secao' => abreviarNomeSecao($m['secao']),
+                        'secao_original' => $m['secao'],
+                        'data_insp_saude' => !empty($m['data_insp_saude']) ? date('d/m/Y', strtotime($m['data_insp_saude'])) : null,
+                        'validade_insp_saude' => $valObj->format('d/m/Y'),
+                        'validade_iso' => $valObj->format('Y-m-d'),
+                        'dias_restantes' => $diffDays,
+                        'status_tipo' => $statusTipo,
+                        'status_class' => $statusClass,
+                        'urgencia_badge_class' => $urgenciaBadgeClass,
+                        'urgencia_texto' => $urgenciaTexto
+                    ];
+                }
             }
 
-            $alertasInspecao[] = [
-                'id' => (int)$m['id'],
-                'nome_completo' => $m['name'],
-                'nome_guerra' => $m['war_name'] ?? '',
-                'posto_grad' => $m['grade'] ?? '',
-                'nome_formatado' => formatarMilitar($m),
-                'especialidade' => $m['specialty'] ?? '',
-                'saram' => $m['saram'] ?? '',
-                'secao' => abreviarNomeSecao($m['secao']),
-                'secao_original' => $m['secao'],
-                'data_insp_saude' => !empty($m['data_insp_saude']) ? date('d/m/Y', strtotime($m['data_insp_saude'])) : null,
-                'validade_insp_saude' => $valObj->format('d/m/Y'),
-                'validade_iso' => $valObj->format('Y-m-d'),
-                'dias_restantes' => $diffDays,
-                'status_tipo' => $statusTipo,
-                'status_class' => $statusClass,
-                'urgencia_badge_class' => $urgenciaBadgeClass,
-                'urgencia_texto' => $urgenciaTexto
-            ];
+            // Ordena para que os prazos mais urgentes e próximos de vencer apareçam primeiro
+            usort($alertasInspecao, function($a, $b) {
+                return strcmp($a['validade_iso'], $b['validade_iso']);
+            });
+        } catch (Exception $e) {
+            error_log("Erro no calculo de alertas de inspecao: " . $e->getMessage());
         }
     }
-
-    // Ordena para que os prazos mais urgentes e próximos de vencer apareçam primeiro
-    usort($alertasInspecao, function($a, $b) {
-        return strcmp($a['validade_iso'], $b['validade_iso']);
-    });
 
     echo json_encode([
         'success' => true,
