@@ -11,7 +11,7 @@ Painel de Gestão Administrativa e Operacional para monitoramento em tempo real 
   - Distribuição e taxa de disponibilidade por Seção
   - Relação de militares afastados / situações especiais
 - **Processos & Demandas do Dia**: Acompanhamento de trâmites e boletins ostensivos
-- **Prazos Críticos & Entregas**: Cronograma regulatório DECEA e prestação de contas com contagem regressiva
+- **Prazos Críticos & Entregas**: Monitoramento dinâmico de Inspeções de Saúde (Validade Insp. Saúde) a vencer nos próximos 90 dias / vencidas, ordenadas por urgência com dados em tempo real do `ctr_efetivo`
 - **News Ticker**: Avisos institucionais em rodapé animado
 - **Atualização Automática**: Auto-sync a cada 30 segundos (ideal para TVs e monitores de sala de situação)
 

@@ -291,6 +291,97 @@ try {
         ];
     }
 
+    // 6. Alertas de Inspeções de Saúde a Vencer (Próximos 90 dias / Vencidas)
+    // Baseado na Validade Insp. Saúde do sistema de efetivo (ctr_efetivo)
+    $stmtInsp = $db->query("
+        SELECT 
+            u.id, u.name, u.war_name, u.grade, u.saram, u.specialty, u.validade_insp_saude, u.data_insp_saude,
+            s.`$secCol` as secao
+        FROM users u
+        LEFT JOIN `$secTable` s ON u.section_id = s.id
+        WHERE u.deleted_at IS NULL 
+          AND u.validade_insp_saude IS NOT NULL 
+          AND u.validade_insp_saude != ''
+          AND u.validade_insp_saude != '0000-00-00'
+        ORDER BY u.validade_insp_saude ASC
+    ");
+    $inspecoesRaw = $stmtInsp->fetchAll();
+
+    $hojeObj = new DateTime('today');
+    $alertasInspecao = [];
+
+    foreach ($inspecoesRaw as $m) {
+        $valStr = trim($m['validade_insp_saude']);
+        $valObj = DateTime::createFromFormat('Y-m-d', $valStr);
+        if (!$valObj) {
+            $valObj = date_create($valStr);
+        }
+        if (!$valObj) continue;
+
+        $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
+
+        // Filtra militares com inspeção até 90 dias (inclui vencidas)
+        if ($diffDays <= 90) {
+            $statusTipo = 'valida';
+            $statusClass = 'bg-blue-50/50 border-blue-200';
+            $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
+            $urgenciaTexto = "Vence em {$diffDays}d";
+
+            if ($diffDays < 0) {
+                $statusTipo = 'vencida';
+                $diasVenc = abs($diffDays);
+                $statusClass = 'bg-rose-50/60 border-rose-200';
+                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
+            } elseif ($diffDays === 0) {
+                $statusTipo = 'hoje';
+                $statusClass = 'bg-rose-100/70 border-rose-300';
+                $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
+                $urgenciaTexto = "Vence Hoje!";
+            } elseif ($diffDays <= 30) {
+                $statusTipo = 'critico';
+                $statusClass = 'bg-rose-50/50 border-rose-200';
+                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                $urgenciaTexto = "Vence em {$diffDays}d";
+            } elseif ($diffDays <= 60) {
+                $statusTipo = 'alerta';
+                $statusClass = 'bg-amber-50/50 border-amber-200';
+                $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+                $urgenciaTexto = "Vence em {$diffDays}d";
+            } else {
+                $statusTipo = 'aviso';
+                $statusClass = 'bg-slate-50 border-slate-200';
+                $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                $urgenciaTexto = "Vence em {$diffDays}d";
+            }
+
+            $alertasInspecao[] = [
+                'id' => (int)$m['id'],
+                'nome_completo' => $m['name'],
+                'nome_guerra' => $m['war_name'] ?? '',
+                'posto_grad' => $m['grade'] ?? '',
+                'nome_formatado' => formatarMilitar($m),
+                'especialidade' => $m['specialty'] ?? '',
+                'saram' => $m['saram'] ?? '',
+                'secao' => abreviarNomeSecao($m['secao']),
+                'secao_original' => $m['secao'],
+                'data_insp_saude' => !empty($m['data_insp_saude']) ? date('d/m/Y', strtotime($m['data_insp_saude'])) : null,
+                'validade_insp_saude' => $valObj->format('d/m/Y'),
+                'validade_iso' => $valObj->format('Y-m-d'),
+                'dias_restantes' => $diffDays,
+                'status_tipo' => $statusTipo,
+                'status_class' => $statusClass,
+                'urgencia_badge_class' => $urgenciaBadgeClass,
+                'urgencia_texto' => $urgenciaTexto
+            ];
+        }
+    }
+
+    // Ordena para que os prazos mais urgentes e próximos de vencer apareçam primeiro
+    usort($alertasInspecao, function($a, $b) {
+        return strcmp($a['validade_iso'], $b['validade_iso']);
+    });
+
     echo json_encode([
         'success' => true,
         'timestamp' => time(),
@@ -306,11 +397,13 @@ try {
             'afastados' => $afastados,
             'total_respondido' => $totalRespondido,
             'taxa_presenca' => $taxaPresenca,
-            'taxa_prontidao_total' => $taxaProntidaoTotal
+            'taxa_prontidao_total' => $taxaProntidaoTotal,
+            'total_inspecoes_alerta' => count($alertasInspecao)
         ],
         'secoes' => $secoes,
         'militares_afastados' => $militaresAfastados,
-        'efetivo_detalhado' => $efetivoDetalhado
+        'efetivo_detalhado' => $efetivoDetalhado,
+        'alertas_inspecao' => $alertasInspecao
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
 } catch (PDOException $e) {
