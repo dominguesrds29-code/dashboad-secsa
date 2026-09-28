@@ -1,7 +1,8 @@
 <?php
 // sync_bca.php
 // Script de Sincronização, Download e Análise Automática do BCA (Boletim do Comando da Aeronáutica)
-// Projetado para ser executado via CLI (Agendador de Tarefas do Windows / Cron) diariamente às 06:00.
+// Projetado para ser executado via CLI (Agendador de Tarefas do Windows / Cron) diariamente e exclusivamente às 06:10.
+// Protegido contra interpolações contínuas ao CENDOC para preservar a segurança da rede Intraer.
 
 date_default_timezone_set('America/Sao_Paulo');
 
@@ -46,6 +47,45 @@ function rotacionarLogSeNecessario($logFile, $maxBytes = 10485760) {
 
     $avisoRotacao = "[" . date('Y-m-d H:i:s') . "] [SISTEMA] Rotação de log: informações mais antigas foram apagadas para manter o arquivo abaixo de 10 MB." . PHP_EOL;
     @file_put_contents($logFile, $avisoRotacao . ltrim($conteudo));
+}
+
+// Função de retenção estrita: Mantém no máximo os 10 PDFs mais recentes na pasta bca/
+function limparPdfsAntigosBca($bcaDir, $maxPdfs = 10, $logFile = null) {
+    if (!is_dir($bcaDir)) return;
+
+    $arquivosPdf = glob($bcaDir . DIRECTORY_SEPARATOR . '*.pdf');
+    if (!$arquivosPdf || count($arquivosPdf) <= $maxPdfs) {
+        return;
+    }
+
+    // Ordenação decrescente: do mais recente para o mais antigo
+    usort($arquivosPdf, function($a, $b) {
+        $numA = 0; $numB = 0;
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($a), $ma)) $numA = (int)$ma[1];
+        if (preg_match('/bca[_\-\s]*([0-9]+)/i', basename($b), $mb)) $numB = (int)$mb[1];
+        
+        if ($numA > 0 && $numB > 0 && $numA !== $numB) {
+            return $numB <=> $numA; // Maior número de BCA primeiro
+        }
+        return filemtime($b) <=> filemtime($a); // Data de modificação mais recente primeiro
+    });
+
+    $qtdExcluir = count($arquivosPdf) - $maxPdfs;
+    $removidos = [];
+
+    // Preserva os $maxPdfs primeiros e remove os excedentes mais antigos
+    $arquivosParaRemover = array_slice($arquivosPdf, $maxPdfs);
+    foreach ($arquivosParaRemover as $caminhoPdf) {
+        $nomeArquivo = basename($caminhoPdf);
+        if (@unlink($caminhoPdf)) {
+            $removidos[] = $nomeArquivo;
+        }
+    }
+
+    if (!empty($removidos) && $logFile) {
+        $listaRemovidos = implode(', ', $removidos);
+        registrarLogBca("[ARMAZENAMENTO] Limpeza automática de diretório: mantidos os {$maxPdfs} PDFs mais recentes. Excluído(s) {$qtdExcluir} PDF(s) antigo(s): {$listaRemovidos}", $logFile);
+    }
 }
 
 // Função de log estruturado
@@ -337,8 +377,11 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
     }
     
     registrarLogBca("==================================================================", $logFile);
-    registrarLogBca("INÍCIO DA ROTINA AUTOMÁTICA DE SINCRONIZAÇÃO E ANÁLISE DO BCA (06:00)", $logFile);
+    registrarLogBca("INÍCIO DA ROTINA AUTOMÁTICA DE SINCRONIZAÇÃO E ANÁLISE DO BCA (06:10)", $logFile);
     registrarLogBca("==================================================================", $logFile);
+
+    // Executa verificação e manutenção prévia do diretório para garantir no máximo 10 PDFs
+    limparPdfsAntigosBca($bcaDir, 10, $logFile);
 
     $baseUrl = 'http://www.cendoc.intraer/sisbca/';
     $urlsParaTentar = [
@@ -440,6 +483,7 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
                     $latestPdfNome = $pdfFileName;
                     $statusDownload = "PDF importado para pasta bca/{$pdfFileName}";
                     registrarLogBca("-> {$statusDownload}", $logFile);
+                    limparPdfsAntigosBca($bcaDir, 10, $logFile);
                 }
             }
         }
@@ -459,6 +503,9 @@ function executarSincronizacaoBca($logFile, $cacheFile, $db_host, $db_port, $db_
 
                 $statusDownload = "Download concluído com sucesso e salvo em: bca/{$pdfFileName}";
                 registrarLogBca("-> {$statusDownload} (Tamanho: " . round(strlen($pdfContent) / 1024, 1) . " KB)", $logFile);
+                
+                // Aplica limpeza para manter estritamente os 10 mais recentes
+                limparPdfsAntigosBca($bcaDir, 10, $logFile);
             } else {
                 $statusDownload = "Falha no download: " . ($resPdf['error'] ?: 'Arquivo incompleto ou inacessível');
                 registrarLogBca("[ERRO] {$statusDownload}", $logFile);

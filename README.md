@@ -23,8 +23,21 @@ Painel de Gestão Administrativa e Operacional para monitoramento em tempo real 
 - MySQL (`efetivosj`)
 - Material Symbols Outlined & Google Fonts (Inter)
 
+## 📰 Monitoramento Automático de BCA (Boletim do Comando da Aeronáutica)
+
+- **Rotina Diária Agendada (06:10)**: Execução única e controlada às **06:10 da manhã** via `cron` do Linux em produção.
+- **Proteção da Infraestrutura de Rede**: As requisições ao portal SISBCA/CENDOC na Intraer ocorrem **exclusivamente 1 vez ao dia** às 06:10. O dashboard web consome apenas o arquivo local de cache (`bca_cache.json`), impedindo qualquer sobrecarga ou interpretação indevida como ataque.
+- **Gestão de Armazenamento Inteligente**: A pasta `bca/` mantém **no máximo 10 arquivos PDF** (os 10 mais recentes). A rotina realiza limpeza e descarte automático dos boletins mais antigos.
+- **Configuração no Crontab do Linux**:
+  ```bash
+  10 6 * * * /usr/bin/php /var/www/html/dashboad-secsa/sync_bca.php > /dev/null 2>&1
+  ```
+
 ## 📋 Pré-requisitos e Execução
 
-1. Coloque a pasta `dashboad-secsa` no diretório raiz do servidor web (ex: `xampp/htdocs/dashboad-secsa`).
+1. Coloque a pasta `dashboad-secsa` no diretório raiz do servidor web (ex: `/var/www/html/dashboad-secsa` no Linux).
 2. Certifique-se de que o banco MySQL do `ctr_efetivo` esteja ativo.
-3. Acesse via navegador: `http://localhost/dashboad-secsa/`
+3. Configure a linha no `crontab -e` do servidor Linux para execução diária às 06:10.
+4. Acesse via navegador: `http://<ip-do-servidor>/dashboad-secsa/`
+
+
