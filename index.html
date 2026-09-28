@@ -519,20 +519,25 @@
           `).join('');
         }
 
-        // 5. Renderiza Prazos Críticos & Entregas (Inspeções de Saúde nos próximos 90 dias / Vencidas)
+        // 5. Renderiza Prazos Críticos & Entregas (Inspeções de Saúde e Prazos Administrativos)
         const prazosCard = document.getElementById('prazos-card-conteudo');
         const prazosBadge = document.getElementById('prazos-total-inspecoes-badge');
-        const alertasInsp = data.alertas_inspecao || [];
+        const todosPrazos = data.todos_prazos || data.alertas_inspecao || [];
 
         if (prazosBadge) {
-          if (alertasInsp.length === 0) {
+          if (todosPrazos.length === 0) {
             prazosBadge.className = 'text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1';
-            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Todas em Dia`;
+            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Todos em Dia`;
           } else {
-            const countVencidas = alertasInsp.filter(i => i.dias_restantes < 0).length;
-            const labelBadge = countVencidas > 0 
-              ? `${alertasInsp.length} ${alertasInsp.length === 1 ? 'Alerta' : 'Alertas'} (${countVencidas} ${countVencidas === 1 ? 'Vencida' : 'Vencidas'})` 
-              : `${alertasInsp.length} ${alertasInsp.length === 1 ? 'Alerta (≤ 90d)' : 'Alertas (≤ 90d)'}`;
+            const countVencidas = todosPrazos.filter(i => i.dias_restantes < 0).length;
+            const countHoje = todosPrazos.filter(i => i.dias_restantes === 0).length;
+            
+            let labelBadge = `${todosPrazos.length} ${todosPrazos.length === 1 ? 'Prazo / Alerta' : 'Prazos / Alertas'}`;
+            if (countVencidas > 0) {
+              labelBadge = `${todosPrazos.length} Alertas (${countVencidas} ${countVencidas === 1 ? 'Vencido' : 'Vencidos'})`;
+            } else if (countHoje > 0) {
+              labelBadge = `${todosPrazos.length} Alertas (${countHoje} Vence Hoje)`;
+            }
             
             prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
             prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${labelBadge}`;
@@ -540,30 +545,32 @@
         }
 
         if (prazosCard) {
-          if (alertasInsp.length === 0) {
+          if (todosPrazos.length === 0) {
             prazosCard.innerHTML = `
               <div class="h-full flex flex-col justify-center items-center py-6 px-4 text-center">
                 <div class="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
-                  <span class="material-symbols-outlined text-2xl">health_and_safety</span>
+                  <span class="material-symbols-outlined text-2xl">task_alt</span>
                 </div>
-                <h4 class="text-sm font-bold text-slate-800">Inspeções de Saúde em Dia</h4>
+                <h4 class="text-sm font-bold text-slate-800">Prazos e Inspeções em Dia</h4>
                 <p class="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                  Nenhum militar com inspeção de saúde a vencer nos próximos 90 dias.
+                  Nenhuma inspeção de saúde a vencer nos próximos 90 dias ou prazo regulatório pendente.
                 </p>
               </div>
             `;
           } else {
-            prazosCard.innerHTML = alertasInsp.map(item => {
+            prazosCard.innerHTML = todosPrazos.map(item => {
               const borderBgClass = item.dias_restantes < 0 
                 ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300' 
-                : (item.dias_restantes <= 30 
-                    ? 'bg-rose-50/30 border-rose-200 hover:border-rose-300' 
-                    : (item.dias_restantes <= 60 
-                        ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300' 
-                        : 'bg-slate-50 border-slate-200 hover:border-slate-300'));
+                : (item.dias_restantes === 0
+                    ? 'bg-rose-100/50 border-rose-300 hover:border-rose-400'
+                    : (item.dias_restantes <= 30 
+                        ? 'bg-rose-50/30 border-rose-200 hover:border-rose-300' 
+                        : (item.dias_restantes <= 60 
+                            ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300' 
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300')));
 
               const tagUrgencia = item.dias_restantes < 0
-                ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">VENCIDA</span>`
+                ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">VENCIDO</span>`
                 : (item.dias_restantes === 0
                     ? `<span class="text-xs font-bold text-rose-800 bg-rose-200 px-2 py-0.5 rounded font-mono animate-pulse">VENCE HOJE</span>`
                     : (item.dias_restantes <= 30
@@ -572,39 +579,70 @@
                             ? `<span class="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono">ATENÇÃO</span>`
                             : `<span class="text-xs font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded font-mono">AVISO</span>`)));
 
-              const postoWar = (item.posto_grad ? item.posto_grad + ' ' : '') + (item.nome_guerra || item.nome_completo);
-
-              return `
-                <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
-                  <div class="min-w-0 pr-3">
-                    <div class="flex items-center gap-2 mb-1">
-                      ${tagUrgencia}
-                      <span class="text-xs text-slate-500 font-semibold">${formatarNomeSecao(item.secao) || 'DTCEA-SJ'}</span>
+              // Item de Inspeção de Saúde
+              if (item.tipo_item === 'inspecao_saude' || item.validade_insp_saude) {
+                const postoWar = (item.posto_grad ? item.posto_grad + ' ' : '') + (item.nome_guerra || item.nome_completo);
+                return `
+                  <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
+                    <div class="min-w-0 pr-3">
+                      <div class="flex items-center gap-2 mb-1">
+                        ${tagUrgencia}
+                        <span class="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 tracking-wider">🩺 INSP. SAÚDE</span>
+                        <span class="text-xs text-slate-500 font-semibold">${formatarNomeSecao(item.secao) || 'DTCEA-SJ'}</span>
+                      </div>
+                      <div class="text-sm font-bold text-slate-900 truncate">
+                        ${postoWar}
+                      </div>
+                      <div class="text-xs text-slate-500 mt-0.5 truncate uppercase tracking-tight" title="${item.nome_completo}">
+                        ${item.nome_completo}
+                      </div>
                     </div>
-                    <div class="text-sm font-bold text-slate-900 truncate">
-                      ${postoWar}
-                    </div>
-                    <div class="text-xs text-slate-500 mt-0.5 truncate uppercase tracking-tight" title="${item.nome_completo}">
-                      ${item.nome_completo}
+                    <div class="text-right shrink-0">
+                      <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
+                        <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-amber-600'}">event_busy</span>
+                        <span>Vence em ${item.validade_insp_saude}</span>
+                      </div>
+                      <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-slate-500'}">
+                        ${item.urgencia_texto}
+                      </span>
                     </div>
                   </div>
-                  <div class="text-right shrink-0">
-                    <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
-                      <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-amber-600'}">event_busy</span>
-                      <span>Vence em ${item.validade_insp_saude}</span>
+                `;
+              } else {
+                // Item de Prazo Administrativo / Entrega
+                return `
+                  <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
+                    <div class="min-w-0 pr-3">
+                      <div class="flex items-center gap-2 mb-1">
+                        ${tagUrgencia}
+                        <span class="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 tracking-wider">📋 ENTREGA</span>
+                        <span class="text-xs text-slate-500 font-semibold">${item.orgao_destino || 'DTCEA-SJ'}</span>
+                      </div>
+                      <div class="text-sm font-bold text-slate-900 truncate" title="${item.titulo}">
+                        ${item.titulo}
+                      </div>
+                      <div class="text-xs text-slate-500 mt-0.5 truncate tracking-tight">
+                        Resp: <strong class="text-slate-700">${item.responsavel || 'SECSA'}</strong> ${item.descricao ? '• ' + item.descricao : ''}
+                      </div>
                     </div>
-                    <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-slate-500'}">
-                      ${item.urgencia_texto}
-                    </span>
+                    <div class="text-right shrink-0">
+                      <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
+                        <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-amber-600'}">schedule</span>
+                        <span>Limite ${item.data_limite}${item.hora_limite ? ' ' + item.hora_limite : ''}</span>
+                      </div>
+                      <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-slate-500'}">
+                        ${item.urgencia_texto}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              `;
+                `;
+              }
             }).join('');
           }
         }
 
       } catch (err) {
-        console.error('Falha ao sincronizar efetivo:', err);
+        console.error('Falha ao sincronizar efetivo e prazos:', err);
         const statusBadge = document.getElementById('badge-status-conexao');
         if (statusBadge) {
           statusBadge.textContent = 'Modo Offline';
