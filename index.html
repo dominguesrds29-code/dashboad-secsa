@@ -527,20 +527,25 @@
         if (prazosBadge) {
           if (alertasInsp.length === 0) {
             prazosBadge.className = 'text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1';
-            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Todas em Dia`;
+            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Nenhuma Insp. Cadastrada`;
           } else {
             const countVencidas = alertasInsp.filter(i => i.dias_restantes < 0).length;
             const countHoje = alertasInsp.filter(i => i.dias_restantes === 0).length;
+            const countAlerta = alertasInsp.filter(i => i.dias_restantes > 0 && i.dias_restantes <= 60).length;
             
-            let labelBadge = `${alertasInsp.length} ${alertasInsp.length === 1 ? 'Alerta (≤ 90d)' : 'Alertas (≤ 90d)'}`;
             if (countVencidas > 0) {
-              labelBadge = `${alertasInsp.length} ${alertasInsp.length === 1 ? 'Alerta' : 'Alertas'} (${countVencidas} ${countVencidas === 1 ? 'Vencida' : 'Vencidas'})`;
+              prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countVencidas} ${countVencidas === 1 ? 'Vencida' : 'Vencidas'})`;
             } else if (countHoje > 0) {
-              labelBadge = `${alertasInsp.length} ${alertasInsp.length === 1 ? 'Alerta' : 'Alertas'} (${countHoje} Vence Hoje)`;
+              prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countHoje} Vence Hoje)`;
+            } else if (countAlerta > 0) {
+              prazosBadge.className = 'text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1.5';
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countAlerta} a vencer)`;
+            } else {
+              prazosBadge.className = 'text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5';
+              prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção em Dia' : 'Inspeções em Dia'}`;
             }
-            
-            prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
-            prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${labelBadge}`;
           }
         }
 
@@ -551,9 +556,9 @@
                 <div class="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
                   <span class="material-symbols-outlined text-2xl">health_and_safety</span>
                 </div>
-                <h4 class="text-sm font-bold text-slate-800">Inspeções de Saúde em Dia</h4>
+                <h4 class="text-sm font-bold text-slate-800">Inspeções de Saúde</h4>
                 <p class="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                  Nenhum militar com inspeção de saúde a vencer nos próximos 90 dias.
+                  Nenhuma data de validade de inspeção de saúde cadastrada no sistema.
                 </p>
               </div>
             `;
@@ -567,7 +572,9 @@
                         ? 'bg-rose-50/30 border-rose-200 hover:border-rose-300' 
                         : (item.dias_restantes <= 60 
                             ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300' 
-                            : 'bg-slate-50 border-slate-200 hover:border-slate-300')));
+                            : (item.dias_restantes <= 90
+                                ? 'bg-sky-50/40 border-sky-200 hover:border-sky-300'
+                                : 'bg-slate-50/60 border-slate-200 hover:border-slate-300'))));
 
               const tagUrgencia = item.dias_restantes < 0
                 ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">VENCIDA</span>`
@@ -577,7 +584,9 @@
                         ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">CRÍTICO</span>`
                         : (item.dias_restantes <= 60
                             ? `<span class="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono">ATENÇÃO</span>`
-                            : `<span class="text-xs font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded font-mono">AVISO</span>`)));
+                            : (item.dias_restantes <= 90
+                                ? `<span class="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded font-mono">AVISO</span>`
+                                : `<span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded font-mono">EM DIA</span>`))));
 
               const postoWar = (item.posto_grad ? item.posto_grad + ' ' : '') + (item.nome_guerra || item.nome_completo);
 
@@ -597,10 +606,10 @@
                   </div>
                   <div class="text-right shrink-0">
                     <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
-                      <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-amber-600'}">event_busy</span>
+                      <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : (item.dias_restantes <= 60 ? 'text-amber-600' : 'text-emerald-600')}">event_busy</span>
                       <span>${item.dias_restantes < 0 ? 'Venceu em' : (item.dias_restantes === 0 ? 'Vence hoje' : 'Vence em')} ${item.validade_insp_saude}</span>
                     </div>
-                    <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-slate-500'}">
+                    <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : (item.dias_restantes <= 60 ? 'text-amber-700' : 'text-slate-500')}">
                       ${item.urgencia_texto}
                     </span>
                   </div>
