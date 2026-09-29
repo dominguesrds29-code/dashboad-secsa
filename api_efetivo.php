@@ -439,10 +439,10 @@ try {
         }
     }
 
-    // 6. Alertas de Inspeções de Saúde a Vencer (Próximos 90 dias / Vencidas)
-    // Baseado ESTRITAMENTE na Validade Insp. Saúde (validade_insp_saude) configurada no banco efetivosj
+    // 6. Alertas de Inspeções de Saúde (Todas as Vencidas e as que Vencem nos Próximos 90 dias)
+    // Monitora a Validade Insp. Saúde (validade_insp_saude) ou Data de Realização (+1 ano) do efetivo
     $alertasInspecao = [];
-    if ($hasValidadeInsp) {
+    if ($hasValidadeInsp || $hasDataInsp) {
         try {
             $stmtInsp = $db->query("
                 SELECT 
@@ -452,17 +452,18 @@ try {
                     " . ($hasSaram ? "u.saram," : "'' as saram,") . "
                     " . ($hasSpecialty ? "u.specialty," : "'' as specialty,") . "
                     " . ($hasDataInsp ? "u.data_insp_saude," : "NULL as data_insp_saude,") . "
-                    u.validade_insp_saude,
+                    " . ($hasValidadeInsp ? "u.validade_insp_saude," : "NULL as validade_insp_saude,") . "
                     s.`$secCol` as secao
                 FROM users u
                 LEFT JOIN `$secTable` s ON u.section_id = s.id
                 WHERE 1=1
                   $whereDeleted
-                  AND u.validade_insp_saude IS NOT NULL 
-                  AND TRIM(u.validade_insp_saude) != ''
-                  AND u.validade_insp_saude != '0000-00-00'
-                  AND u.validade_insp_saude != '00/00/0000'
-                ORDER BY u.validade_insp_saude ASC
+                  AND (
+                      (u.validade_insp_saude IS NOT NULL AND TRIM(u.validade_insp_saude) != '' AND u.validade_insp_saude != '0000-00-00' AND u.validade_insp_saude != '00/00/0000' AND u.validade_insp_saude != '-')
+                      OR
+                      (u.data_insp_saude IS NOT NULL AND TRIM(u.data_insp_saude) != '' AND u.data_insp_saude != '0000-00-00' AND u.data_insp_saude != '00/00/0000' AND u.data_insp_saude != '-')
+                  )
+                ORDER BY COALESCE(u.validade_insp_saude, u.data_insp_saude) ASC
             ");
             $inspecoesRaw = $stmtInsp->fetchAll();
 
@@ -471,18 +472,31 @@ try {
 
             foreach ($inspecoesRaw as $m) {
                 $valStr = trim($m['validade_insp_saude'] ?? '');
-                if (empty($valStr) || $valStr === '0000-00-00' || $valStr === '00/00/0000' || $valStr === '-' || $valStr === 'null') {
-                    continue;
+                $dtStr = trim($m['data_insp_saude'] ?? '');
+
+                $valObj = null;
+                if (!empty($valStr) && $valStr !== '0000-00-00' && $valStr !== '00/00/0000' && $valStr !== '-' && $valStr !== 'null') {
+                    $valObj = parseDataValidadeFlexible($valStr);
                 }
 
-                $valObj = parseDataValidadeFlexible($valStr);
+                $dtInspObj = null;
+                if (!empty($dtStr) && $dtStr !== '0000-00-00' && $dtStr !== '00/00/0000' && $dtStr !== '-' && $dtStr !== 'null') {
+                    $dtInspObj = parseDataValidadeFlexible($dtStr);
+                }
+
+                // Se não tem validade explícita mas tem data de realização, calcula validade como +1 ano
+                if (!$valObj && $dtInspObj) {
+                    $valObj = clone $dtInspObj;
+                    $valObj->modify('+1 year');
+                }
+
                 if (!$valObj) continue;
                 $valObj->setTime(0, 0, 0);
 
                 $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
 
-                // Filtra militares com inspeção a vencer nos próximos 90 dias ou vencidas (até 365 dias)
-                if ($diffDays <= 90 && $diffDays >= -365) {
+                // Monitora TODAS as inspeções já vencidas (diffDays < 0) e as que vencem nos próximos 90 dias (diffDays <= 90)
+                if ($diffDays <= 90) {
                     $statusTipo = 'valida';
                     $statusClass = 'bg-blue-50/50 border-blue-200';
                     $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
@@ -516,8 +530,6 @@ try {
                         $urgenciaTexto = "Vence em {$diffDays}d";
                     }
 
-                    $dtInspObj = !empty($m['data_insp_saude']) ? parseDataValidadeFlexible($m['data_insp_saude']) : null;
-
                     $alertasInspecao[] = [
                         'tipo_item' => 'inspecao_saude',
                         'id' => (int)$m['id'],
@@ -541,7 +553,7 @@ try {
                 }
             }
 
-            // Ordena para que os prazos mais urgentes e próximos de vencer apareçam primeiro
+            // Ordena para que os prazos mais urgentes e vencidos apareçam primeiro no topo
             usort($alertasInspecao, function($a, $b) {
                 return strcmp($a['validade_iso'], $b['validade_iso']);
             });

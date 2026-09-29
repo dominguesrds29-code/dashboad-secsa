@@ -598,7 +598,7 @@
                   <div class="text-right shrink-0">
                     <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
                       <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-amber-600'}">event_busy</span>
-                      <span>Vence em ${item.validade_insp_saude}</span>
+                      <span>${item.dias_restantes < 0 ? 'Venceu em' : (item.dias_restantes === 0 ? 'Vence hoje' : 'Vence em')} ${item.validade_insp_saude}</span>
                     </div>
                     <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : 'text-slate-500'}">
                       ${item.urgencia_texto}
