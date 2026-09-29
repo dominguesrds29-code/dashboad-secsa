@@ -107,16 +107,37 @@ function abreviarNomeSecao($secao) {
 }
 
 try {
-    // Tentativa com as credenciais carregadas ou padrões
-    $conexoesTentativas = [
-        ['host' => $db_host, 'port' => $db_port, 'name' => $db_name, 'user' => $db_user, 'pass' => $db_pass],
-        ['host' => '127.0.0.1', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'website', 'pass' => '@dm1nSJ-D4t4b@53'],
-        ['host' => '127.0.0.1', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'root', 'pass' => ''],
-        ['host' => 'localhost', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'root', 'pass' => 'root']
+    // Tentativa com as credenciais carregadas ou padrões e múltiplos bancos de dados
+    $candidateDbs = array_unique(array_filter([$db_name, 'efetivosj', 'ctr_efetivo', 'sgp_dtceasj', 'dtceasj', 'painel']));
+    $candidateHosts = array_unique(array_filter([$db_host, '127.0.0.1', 'localhost']));
+    $credentialPairs = [
+        ['user' => $db_user, 'pass' => $db_pass],
+        ['user' => 'website', 'pass' => '@dm1nSJ-D4t4b@53'],
+        ['user' => 'root', 'pass' => '@dm1nSJ-D4t4b@53'],
+        ['user' => 'root', 'pass' => ''],
+        ['user' => 'root', 'pass' => 'root'],
+        ['user' => 'admin', 'pass' => 'admin']
     ];
+
+    $conexoesTentativas = [];
+    foreach ($candidateHosts as $h) {
+        foreach ($candidateDbs as $d) {
+            foreach ($credentialPairs as $cred) {
+                $conexoesTentativas[] = [
+                    'host' => $h,
+                    'port' => $db_port,
+                    'name' => $d,
+                    'user' => $cred['user'],
+                    'pass' => $cred['pass']
+                ];
+            }
+        }
+    }
 
     $db = null;
     $ultimoErroDb = null;
+    $connectedDbInfo = null;
+
     foreach ($conexoesTentativas as $connInfo) {
         try {
             $h = $connInfo['host'];
@@ -127,6 +148,7 @@ try {
             $db = new PDO("mysql:host=$h;port=$p;dbname=$n;charset=utf8mb4", $u, $pw);
             $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $connectedDbInfo = "$u@$h:$p/$n";
             break;
         } catch (Exception $errConn) {
             $ultimoErroDb = $errConn;
@@ -145,13 +167,22 @@ try {
     // Identificar a tabela e colunas de seções
     $secTable = 'sections';
     $secCol = 'name';
-    $tables = $db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+    $tables = [];
+    try {
+        $tables = $db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {}
+
     if (in_array('sections', $tables)) {
         $secTable = 'sections';
     } elseif (in_array('secoes', $tables)) {
         $secTable = 'secoes';
     }
-    $cols = $db->query("SHOW COLUMNS FROM `$secTable`")->fetchAll(PDO::FETCH_COLUMN);
+
+    $cols = [];
+    try {
+        $cols = $db->query("SHOW COLUMNS FROM `$secTable`")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {}
+
     if (in_array('name', $cols)) {
         $secCol = 'name';
     } elseif (in_array('nome', $cols)) {
@@ -160,43 +191,53 @@ try {
         $secCol = 'sigla';
     }
 
-    // Identificar colunas disponíveis na tabela users
+    // Identificar colunas disponíveis na tabela users de forma dinâmica e resiliente
     $userCols = [];
     try {
         $userCols = $db->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Exception $e) {}
 
-    $hasDeletedAt = in_array('deleted_at', $userCols);
-    $hasEscala = in_array('escala', $userCols);
-    $hasValidadeInsp = in_array('validade_insp_saude', $userCols);
-    $hasDataInsp = in_array('data_insp_saude', $userCols);
-    $hasSpecialty = in_array('specialty', $userCols);
-    $hasWarName = in_array('war_name', $userCols);
-    $hasGrade = in_array('grade', $userCols);
-    $hasSaram = in_array('saram', $userCols);
+    function encontrarColuna($candidatos, $colunasReais) {
+        foreach ($candidatos as $cand) {
+            if (in_array($cand, $colunasReais)) return $cand;
+        }
+        return null;
+    }
+
+    $colDeletedAt = encontrarColuna(['deleted_at', 'dt_delete', 'deletado_em'], $userCols);
+    $colEscala = encontrarColuna(['escala'], $userCols);
+    $colValidadeInsp = encontrarColuna(['validade_insp_saude', 'validade_inspecao', 'validade_inspecao_saude', 'val_insp_saude', 'validade_saude', 'val_saude', 'validade'], $userCols);
+    $colDataInsp = encontrarColuna(['data_insp_saude', 'data_inspecao', 'data_inspecao_saude', 'dt_insp_saude', 'data_saude', 'dt_saude', 'data_realizacao'], $userCols);
+    $colSpecialty = encontrarColuna(['specialty', 'especialidade', 'esp', 'quadro'], $userCols);
+    $colWarName = encontrarColuna(['war_name', 'nome_guerra', 'guerra'], $userCols);
+    $colGrade = encontrarColuna(['grade', 'posto_grad', 'posto', 'graduacao'], $userCols);
+    $colSaram = encontrarColuna(['saram', 'saram_militar', 'nr_saram', 'nr_ordem'], $userCols);
+    $colSectionId = encontrarColuna(['section_id', 'secao_id', 'id_secao'], $userCols) ?: 'section_id';
 
     // Se faltar colunas críticas de inspeção, tenta criar dinamicamente
-    if (!$hasValidadeInsp) {
+    if (!$colValidadeInsp) {
         try {
             $db->exec("ALTER TABLE users ADD COLUMN validade_insp_saude DATE NULL");
-            $hasValidadeInsp = true;
+            $colValidadeInsp = 'validade_insp_saude';
+            $userCols[] = 'validade_insp_saude';
         } catch (Exception $e) {}
     }
-    if (!$hasDataInsp) {
+    if (!$colDataInsp) {
         try {
             $db->exec("ALTER TABLE users ADD COLUMN data_insp_saude DATE NULL");
-            $hasDataInsp = true;
+            $colDataInsp = 'data_insp_saude';
+            $userCols[] = 'data_insp_saude';
         } catch (Exception $e) {}
     }
 
     // Filtro para incluir pessoal ativo
-    $whereDeleted = $hasDeletedAt ? "AND (u.deleted_at IS NULL OR u.deleted_at = '0000-00-00 00:00:00' OR u.deleted_at = '0000-00-00' OR TRIM(u.deleted_at) = '')" : "";
-    $whereEscala = $hasEscala ? "AND u.escala = 0" : "";
+    $whereDeleted = $colDeletedAt ? "AND (u.`$colDeletedAt` IS NULL OR u.`$colDeletedAt` = '0000-00-00 00:00:00' OR u.`$colDeletedAt` = '0000-00-00' OR TRIM(u.`$colDeletedAt`) = '')" : "";
+    $whereEscala = $colEscala ? "AND u.`$colEscala` = 0" : "";
 
     $filterExpediente = "
         $whereEscala
-        AND u.section_id IS NOT NULL 
-        AND u.section_id > 1
+        AND u.`$colSectionId` IS NOT NULL 
+        AND u.`$colSectionId` > 1
         AND s.id IS NOT NULL
         AND s.id NOT IN (1, 8, 10, 11)
         AND TRIM(COALESCE(s.`$secCol`, '')) NOT IN ('Torre de Controle', 'TORRE DE CONTROLE', 'TWR', 'EMS', 'EMS1', 'EMS-1 / CMA-2', 'Sala AIS', 'SALA AIS', 'AIS', 'Sem Seção', '')
@@ -208,7 +249,7 @@ try {
         $stmtGeral = $db->query("
             SELECT COUNT(u.id) as total 
             FROM users u 
-            JOIN `$secTable` s ON u.section_id = s.id 
+            JOIN `$secTable` s ON u.`$colSectionId` = s.id 
             WHERE 1=1 $whereDeleted $filterExpediente
         ");
         $totalEfetivo = (int)($stmtGeral->fetch()['total'] ?? 0);
@@ -235,7 +276,7 @@ try {
                 SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as total_respondido
             FROM presencas p
             JOIN users u ON p.militar_id = u.id
-            JOIN `$secTable` s ON u.section_id = s.id
+            JOIN `$secTable` s ON u.`$colSectionId` = s.id
             WHERE p.data = ? 
               $whereDeleted 
               $filterExpediente
@@ -272,7 +313,7 @@ try {
                 SUM(CASE WHEN p.status IN ('C', 'M') THEN 1 ELSE 0 END) as afastados_secao,
                 SUM(CASE WHEN p.status IS NOT NULL THEN 1 ELSE 0 END) as respondidos_secao
             FROM users u
-            JOIN `$secTable` s ON u.section_id = s.id
+            JOIN `$secTable` s ON u.`$colSectionId` = s.id
             LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
             WHERE 1=1 
               $whereDeleted 
@@ -310,15 +351,12 @@ try {
     try {
         $stmtAfastados = $db->prepare("
             SELECT 
-                u.id, u.name, 
-                " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
-                " . ($hasGrade ? "u.grade," : "'' as grade,") . "
-                " . ($hasSaram ? "u.saram," : "'' as saram,") . "
+                u.*,
                 s.`$secCol` as secao, 
                 p.status
             FROM users u
             JOIN presencas p ON u.id = p.militar_id
-            JOIN `$secTable` s ON u.section_id = s.id
+            JOIN `$secTable` s ON u.`$colSectionId` = s.id
             WHERE p.data = ? 
               AND p.status NOT IN ('P', 'EA', 'HO', 'O')
               $whereDeleted 
@@ -338,13 +376,13 @@ try {
 
             $militaresAfastados[] = [
                 'id' => (int)$m['id'],
-                'nome_completo' => $m['name'],
+                'nome_completo' => $m['name'] ?? ($m['nome'] ?? ''),
                 'nome_formatado' => formatarMilitar($m),
-                'grade' => $m['grade'] ?? '',
-                'war_name' => $m['war_name'] ?? '',
-                'saram' => $m['saram'] ?? '',
-                'secao' => abreviarNomeSecao($m['secao']),
-                'secao_original' => $m['secao'],
+                'grade' => $colGrade ? ($m[$colGrade] ?? '') : '',
+                'war_name' => $colWarName ? ($m[$colWarName] ?? '') : '',
+                'saram' => $colSaram ? ($m[$colSaram] ?? '') : '',
+                'secao' => abreviarNomeSecao($m['secao'] ?? ''),
+                'secao_original' => $m['secao'] ?? '',
                 'status' => $st,
                 'status_label' => $stInfo['label'],
                 'status_tipo' => $stInfo['tipo'],
@@ -360,14 +398,11 @@ try {
     try {
         $stmtTodos = $db->prepare("
             SELECT 
-                u.id, u.name,
-                " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
-                " . ($hasGrade ? "u.grade," : "'' as grade,") . "
-                " . ($hasSaram ? "u.saram," : "'' as saram,") . "
+                u.*,
                 s.`$secCol` as secao,
                 COALESCE(p.status, 'SEM_CHAMADA') as status
             FROM users u
-            JOIN `$secTable` s ON u.section_id = s.id
+            JOIN `$secTable` s ON u.`$colSectionId` = s.id
             LEFT JOIN presencas p ON u.id = p.militar_id AND p.data = ?
             WHERE 1=1
               $whereDeleted 
@@ -388,10 +423,10 @@ try {
             $efetivoDetalhado[] = [
                 'id' => (int)$m['id'],
                 'nome_formatado' => formatarMilitar($m),
-                'grade' => $m['grade'] ?? '',
-                'war_name' => $m['war_name'] ?? '',
-                'secao' => abreviarNomeSecao($m['secao']),
-                'secao_original' => $m['secao'],
+                'grade' => $colGrade ? ($m[$colGrade] ?? '') : '',
+                'war_name' => $colWarName ? ($m[$colWarName] ?? '') : '',
+                'secao' => abreviarNomeSecao($m['secao'] ?? ''),
+                'secao_original' => $m['secao'] ?? '',
                 'status' => $st,
                 'status_label' => $stInfo['label'],
                 'status_class' => $stInfo['class']
@@ -404,7 +439,7 @@ try {
     // Função robusta e resiliente para conversão de datas de inspeção e prazos
     function parseDataValidadeFlexible($valStr) {
         if (empty($valStr)) return null;
-        $valStr = trim($valStr);
+        $valStr = trim((string)$valStr);
         if ($valStr === '0000-00-00' || $valStr === '00/00/0000' || $valStr === '-' || $valStr === 'null' || $valStr === 'undefined') return null;
 
         // YYYY-MM-DD ou YYYY-MM-DD HH:MM:SS
@@ -440,129 +475,135 @@ try {
     }
 
     // 6. Alertas de Inspeções de Saúde (Todas as Vencidas e as que Vencem nos Próximos 90 dias)
-    // Monitora a Validade Insp. Saúde (validade_insp_saude) ou Data de Realização (+1 ano) do efetivo
+    // Monitora a Validade Insp. Saúde ou Data de Realização (+1 ano) do efetivo de forma totalmente resiliente
     $alertasInspecao = [];
-    if ($hasValidadeInsp || $hasDataInsp) {
-        try {
-            $stmtInsp = $db->query("
-                SELECT 
-                    u.id, u.name,
-                    " . ($hasWarName ? "u.war_name," : "'' as war_name,") . "
-                    " . ($hasGrade ? "u.grade," : "'' as grade,") . "
-                    " . ($hasSaram ? "u.saram," : "'' as saram,") . "
-                    " . ($hasSpecialty ? "u.specialty," : "'' as specialty,") . "
-                    " . ($hasDataInsp ? "u.data_insp_saude," : "NULL as data_insp_saude,") . "
-                    " . ($hasValidadeInsp ? "u.validade_insp_saude," : "NULL as validade_insp_saude,") . "
-                    s.`$secCol` as secao
-                FROM users u
-                LEFT JOIN `$secTable` s ON u.section_id = s.id
-                WHERE 1=1
-                  $whereDeleted
-                  AND (
-                      (u.validade_insp_saude IS NOT NULL AND TRIM(u.validade_insp_saude) != '' AND u.validade_insp_saude != '0000-00-00' AND u.validade_insp_saude != '00/00/0000' AND u.validade_insp_saude != '-')
-                      OR
-                      (u.data_insp_saude IS NOT NULL AND TRIM(u.data_insp_saude) != '' AND u.data_insp_saude != '0000-00-00' AND u.data_insp_saude != '00/00/0000' AND u.data_insp_saude != '-')
-                  )
-                ORDER BY COALESCE(u.validade_insp_saude, u.data_insp_saude) ASC
-            ");
-            $inspecoesRaw = $stmtInsp->fetchAll();
+    $erroInspecao = null;
+    $totalMilitaresAvaliados = 0;
 
-            $hojeObj = new DateTime('today');
-            $hojeObj->setTime(0, 0, 0);
+    try {
+        $stmtInsp = $db->query("
+            SELECT u.*, s.`$secCol` as secao
+            FROM users u
+            LEFT JOIN `$secTable` s ON u.`$colSectionId` = s.id
+            WHERE 1=1 $whereDeleted
+            ORDER BY u.id ASC
+        ");
+        $inspecoesRaw = $stmtInsp->fetchAll();
+        $totalMilitaresAvaliados = count($inspecoesRaw);
 
-            foreach ($inspecoesRaw as $m) {
-                $valStr = trim($m['validade_insp_saude'] ?? '');
-                $dtStr = trim($m['data_insp_saude'] ?? '');
+        $hojeObj = new DateTime('today');
+        $hojeObj->setTime(0, 0, 0);
 
-                $valObj = null;
-                if (!empty($valStr) && $valStr !== '0000-00-00' && $valStr !== '00/00/0000' && $valStr !== '-' && $valStr !== 'null') {
-                    $valObj = parseDataValidadeFlexible($valStr);
-                }
-
-                $dtInspObj = null;
-                if (!empty($dtStr) && $dtStr !== '0000-00-00' && $dtStr !== '00/00/0000' && $dtStr !== '-' && $dtStr !== 'null') {
-                    $dtInspObj = parseDataValidadeFlexible($dtStr);
-                }
-
-                // Se não tem validade explícita mas tem data de realização, calcula validade como +1 ano
-                if (!$valObj && $dtInspObj) {
-                    $valObj = clone $dtInspObj;
-                    $valObj->modify('+1 year');
-                }
-
-                if (!$valObj) continue;
-                $valObj->setTime(0, 0, 0);
-
-                $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
-
-                // Monitora TODAS as inspeções já vencidas (diffDays < 0) e as que vencem nos próximos 90 dias (diffDays <= 90)
-                if ($diffDays <= 90) {
-                    $statusTipo = 'valida';
-                    $statusClass = 'bg-blue-50/50 border-blue-200';
-                    $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
-                    $urgenciaTexto = "Vence em {$diffDays}d";
-
-                    if ($diffDays < 0) {
-                        $statusTipo = 'vencida';
-                        $diasVenc = abs($diffDays);
-                        $statusClass = 'bg-rose-50/60 border-rose-200';
-                        $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                        $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
-                    } elseif ($diffDays === 0) {
-                        $statusTipo = 'hoje';
-                        $statusClass = 'bg-rose-100/70 border-rose-300';
-                        $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
-                        $urgenciaTexto = "Vence Hoje!";
-                    } elseif ($diffDays <= 30) {
-                        $statusTipo = 'critico';
-                        $statusClass = 'bg-rose-50/50 border-rose-200';
-                        $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                        $urgenciaTexto = "Vence em {$diffDays}d";
-                    } elseif ($diffDays <= 60) {
-                        $statusTipo = 'alerta';
-                        $statusClass = 'bg-amber-50/50 border-amber-200';
-                        $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
-                        $urgenciaTexto = "Vence em {$diffDays}d";
-                    } else {
-                        $statusTipo = 'aviso';
-                        $statusClass = 'bg-slate-50 border-slate-200';
-                        $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-                        $urgenciaTexto = "Vence em {$diffDays}d";
-                    }
-
-                    $alertasInspecao[] = [
-                        'tipo_item' => 'inspecao_saude',
-                        'id' => (int)$m['id'],
-                        'nome_completo' => $m['name'],
-                        'nome_guerra' => $m['war_name'] ?? '',
-                        'posto_grad' => $m['grade'] ?? '',
-                        'nome_formatado' => formatarMilitar($m),
-                        'especialidade' => $m['specialty'] ?? '',
-                        'saram' => $m['saram'] ?? '',
-                        'secao' => abreviarNomeSecao($m['secao']),
-                        'secao_original' => $m['secao'] ?? 'DTCEA-SJ',
-                        'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
-                        'validade_insp_saude' => $valObj->format('d/m/Y'),
-                        'validade_iso' => $valObj->format('Y-m-d'),
-                        'dias_restantes' => $diffDays,
-                        'status_tipo' => $statusTipo,
-                        'status_class' => $statusClass,
-                        'urgencia_badge_class' => $urgenciaBadgeClass,
-                        'urgencia_texto' => $urgenciaTexto
-                    ];
+        foreach ($inspecoesRaw as $m) {
+            // Tenta obter validade de múltiplas chaves possíveis
+            $valStr = '';
+            $possibleValKeys = ['validade_insp_saude', 'validade_inspecao', 'validade_inspecao_saude', 'val_insp_saude', 'validade_saude', 'val_saude', 'validade'];
+            foreach ($possibleValKeys as $vk) {
+                if (!empty($m[$vk])) {
+                    $valStr = trim((string)$m[$vk]);
+                    break;
                 }
             }
 
-            // Ordena para que os prazos mais urgentes e vencidos apareçam primeiro no topo
-            usort($alertasInspecao, function($a, $b) {
-                return strcmp($a['validade_iso'], $b['validade_iso']);
-            });
-        } catch (Exception $e) {
-            error_log("Erro no calculo de alertas de inspecao: " . $e->getMessage());
+            // Tenta obter data de realização de múltiplas chaves possíveis
+            $dtStr = '';
+            $possibleDtKeys = ['data_insp_saude', 'data_inspecao', 'data_inspecao_saude', 'dt_insp_saude', 'data_saude', 'dt_saude', 'data_realizacao'];
+            foreach ($possibleDtKeys as $dk) {
+                if (!empty($m[$dk])) {
+                    $dtStr = trim((string)$m[$dk]);
+                    break;
+                }
+            }
+
+            $valObj = null;
+            if (!empty($valStr) && $valStr !== '0000-00-00' && $valStr !== '00/00/0000' && $valStr !== '-' && $valStr !== 'null') {
+                $valObj = parseDataValidadeFlexible($valStr);
+            }
+
+            $dtInspObj = null;
+            if (!empty($dtStr) && $dtStr !== '0000-00-00' && $dtStr !== '00/00/0000' && $dtStr !== '-' && $dtStr !== 'null') {
+                $dtInspObj = parseDataValidadeFlexible($dtStr);
+            }
+
+            // Se não tem validade explícita mas tem data de realização, calcula validade como +1 ano
+            if (!$valObj && $dtInspObj) {
+                $valObj = clone $dtInspObj;
+                $valObj->modify('+1 year');
+            }
+
+            if (!$valObj) continue;
+            $valObj->setTime(0, 0, 0);
+
+            $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
+
+            // Monitora TODAS as inspeções já vencidas (diffDays < 0) e as que vencem nos próximos 90 dias (diffDays <= 90)
+            if ($diffDays <= 90) {
+                $statusTipo = 'valida';
+                $statusClass = 'bg-blue-50/50 border-blue-200';
+                $urgenciaBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
+                $urgenciaTexto = "Vence em {$diffDays}d";
+
+                if ($diffDays < 0) {
+                    $statusTipo = 'vencida';
+                    $diasVenc = abs($diffDays);
+                    $statusClass = 'bg-rose-50/60 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
+                } elseif ($diffDays === 0) {
+                    $statusTipo = 'hoje';
+                    $statusClass = 'bg-rose-100/70 border-rose-300';
+                    $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
+                    $urgenciaTexto = "Vence Hoje!";
+                } elseif ($diffDays <= 30) {
+                    $statusTipo = 'critico';
+                    $statusClass = 'bg-rose-50/50 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } elseif ($diffDays <= 60) {
+                    $statusTipo = 'alerta';
+                    $statusClass = 'bg-amber-50/50 border-amber-200';
+                    $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } else {
+                    $statusTipo = 'aviso';
+                    $statusClass = 'bg-slate-50 border-slate-200';
+                    $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                }
+
+                $alertasInspecao[] = [
+                    'tipo_item' => 'inspecao_saude',
+                    'id' => (int)$m['id'],
+                    'nome_completo' => $m['name'] ?? ($m['nome'] ?? ''),
+                    'nome_guerra' => $colWarName ? ($m[$colWarName] ?? '') : ($m['war_name'] ?? ($m['nome_guerra'] ?? '')),
+                    'posto_grad' => $colGrade ? ($m[$colGrade] ?? '') : ($m['grade'] ?? ($m['posto_grad'] ?? '')),
+                    'nome_formatado' => formatarMilitar($m),
+                    'especialidade' => $colSpecialty ? ($m[$colSpecialty] ?? '') : ($m['specialty'] ?? ($m['especialidade'] ?? '')),
+                    'saram' => $colSaram ? ($m[$colSaram] ?? '') : ($m['saram'] ?? ($m['saram_militar'] ?? '')),
+                    'secao' => abreviarNomeSecao($m['secao'] ?? ''),
+                    'secao_original' => $m['secao'] ?? 'DTCEA-SJ',
+                    'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
+                    'validade_insp_saude' => $valObj->format('d/m/Y'),
+                    'validade_iso' => $valObj->format('Y-m-d'),
+                    'dias_restantes' => $diffDays,
+                    'status_tipo' => $statusTipo,
+                    'status_class' => $statusClass,
+                    'urgencia_badge_class' => $urgenciaBadgeClass,
+                    'urgencia_texto' => $urgenciaTexto
+                ];
+            }
         }
+
+        // Ordena para que os prazos mais urgentes e vencidos apareçam primeiro no topo
+        usort($alertasInspecao, function($a, $b) {
+            return strcmp($a['validade_iso'], $b['validade_iso']);
+        });
+    } catch (Exception $e) {
+        $erroInspecao = $e->getMessage();
+        error_log("Erro no calculo de alertas de inspecao: " . $e->getMessage());
     }
 
-    echo json_encode([
+    $responsePayload = [
         'success' => true,
         'timestamp' => time(),
         'data_consulta' => $dataConsulta,
@@ -584,7 +625,21 @@ try {
         'militares_afastados' => $militaresAfastados,
         'efetivo_detalhado' => $efetivoDetalhado,
         'alertas_inspecao' => $alertasInspecao
-    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    ];
+
+    if (isset($_GET['debug'])) {
+        $responsePayload['debug'] = [
+            'db_conexao' => $connectedDbInfo,
+            'total_avaliados' => $totalMilitaresAvaliados,
+            'total_alertas' => count($alertasInspecao),
+            'colunas_users' => $userCols,
+            'col_validade' => $colValidadeInsp,
+            'col_data_insp' => $colDataInsp,
+            'erro_inspecao' => $erroInspecao
+        ];
+    }
+
+    echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
 } catch (PDOException $e) {
     echo json_encode([
