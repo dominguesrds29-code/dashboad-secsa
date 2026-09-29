@@ -481,13 +481,19 @@ try {
     $totalMilitaresAvaliados = 0;
 
     try {
-        $stmtInsp = $db->query("
-            SELECT u.*, s.`$secCol` as secao
-            FROM users u
-            LEFT JOIN `$secTable` s ON u.`$colSectionId` = s.id
-            WHERE 1=1 $whereDeleted
-            ORDER BY u.id ASC
-        ");
+        // Obter mapa de seções de forma resiliente
+        $secaoNomeMap = [];
+        try {
+            if (!empty($secTable)) {
+                $secRows = $db->query("SELECT id, `$secCol` as nome_secao FROM `$secTable`")->fetchAll();
+                foreach ($secRows as $sr) {
+                    $secaoNomeMap[$sr['id']] = $sr['nome_secao'];
+                }
+            }
+        } catch (Exception $e) {}
+
+        // Busca todos os militares ativos diretamente da tabela users
+        $stmtInsp = $db->query("SELECT * FROM users u WHERE 1=1 $whereDeleted ORDER BY u.id ASC");
         $inspecoesRaw = $stmtInsp->fetchAll();
         $totalMilitaresAvaliados = count($inspecoesRaw);
 
@@ -495,6 +501,9 @@ try {
         $hojeObj->setTime(0, 0, 0);
 
         foreach ($inspecoesRaw as $m) {
+            $secId = $m['section_id'] ?? ($m['secao_id'] ?? 0);
+            $secaoNomeMilitar = $secaoNomeMap[$secId] ?? ($m['secao'] ?? 'DTCEA-SJ');
+
             // Tenta obter validade de múltiplas chaves possíveis
             $valStr = '';
             $possibleValKeys = ['validade_insp_saude', 'validade_inspecao', 'validade_inspecao_saude', 'val_insp_saude', 'validade_saude', 'val_saude', 'validade'];
@@ -580,8 +589,8 @@ try {
                     'nome_formatado' => formatarMilitar($m),
                     'especialidade' => $colSpecialty ? ($m[$colSpecialty] ?? '') : ($m['specialty'] ?? ($m['especialidade'] ?? '')),
                     'saram' => $colSaram ? ($m[$colSaram] ?? '') : ($m['saram'] ?? ($m['saram_militar'] ?? '')),
-                    'secao' => abreviarNomeSecao($m['secao'] ?? ''),
-                    'secao_original' => $m['secao'] ?? 'DTCEA-SJ',
+                    'secao' => abreviarNomeSecao($secaoNomeMilitar),
+                    'secao_original' => $secaoNomeMilitar,
                     'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
                     'validade_insp_saude' => $valObj->format('d/m/Y'),
                     'validade_iso' => $valObj->format('Y-m-d'),
