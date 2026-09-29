@@ -31,9 +31,11 @@ function carregarEnv($caminho) {
 $possiveisEnv = [
     __DIR__ . '/../ctr_efetivo/public/.env',
     __DIR__ . '/../ctr_efetivo/.env',
+    __DIR__ . '/../efetivosj/.env',
     __DIR__ . '/.env',
     dirname(__DIR__) . '/ctr_efetivo/public/.env',
-    dirname(__DIR__) . '/ctr_efetivo/.env'
+    dirname(__DIR__) . '/ctr_efetivo/.env',
+    dirname(__DIR__) . '/efetivosj/.env'
 ];
 foreach ($possiveisEnv as $envPath) {
     if (carregarEnv($envPath)) {
@@ -105,9 +107,35 @@ function abreviarNomeSecao($secao) {
 }
 
 try {
-    $db = new PDO("mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    // Tentativa com as credenciais carregadas ou padrões
+    $conexoesTentativas = [
+        ['host' => $db_host, 'port' => $db_port, 'name' => $db_name, 'user' => $db_user, 'pass' => $db_pass],
+        ['host' => '127.0.0.1', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'website', 'pass' => '@dm1nSJ-D4t4b@53'],
+        ['host' => '127.0.0.1', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'root', 'pass' => ''],
+        ['host' => 'localhost', 'port' => '3306', 'name' => 'efetivosj', 'user' => 'root', 'pass' => 'root']
+    ];
+
+    $db = null;
+    $ultimoErroDb = null;
+    foreach ($conexoesTentativas as $connInfo) {
+        try {
+            $h = $connInfo['host'];
+            $p = $connInfo['port'];
+            $n = $connInfo['name'];
+            $u = $connInfo['user'];
+            $pw = $connInfo['pass'];
+            $db = new PDO("mysql:host=$h;port=$p;dbname=$n;charset=utf8mb4", $u, $pw);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            break;
+        } catch (Exception $errConn) {
+            $ultimoErroDb = $errConn;
+        }
+    }
+
+    if (!$db) {
+        throw new PDOException("Não foi possível conectar ao banco de dados: " . ($ultimoErroDb ? $ultimoErroDb->getMessage() : 'Erro desconhecido'));
+    }
 
     $dataConsulta = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
     if (empty($dataConsulta)) {
@@ -161,8 +189,8 @@ try {
         } catch (Exception $e) {}
     }
 
-    // Filtro para incluir pessoal do expediente e excluir operacionais / sem seção
-    $whereDeleted = $hasDeletedAt ? "AND u.deleted_at IS NULL" : "";
+    // Filtro para incluir pessoal ativo
+    $whereDeleted = $hasDeletedAt ? "AND (u.deleted_at IS NULL OR u.deleted_at = '0000-00-00 00:00:00' OR u.deleted_at = '0000-00-00' OR TRIM(u.deleted_at) = '')" : "";
     $whereEscala = $hasEscala ? "AND u.escala = 0" : "";
 
     $filterExpediente = "
@@ -379,27 +407,33 @@ try {
         $valStr = trim($valStr);
         if ($valStr === '0000-00-00' || $valStr === '00/00/0000' || $valStr === '-' || $valStr === 'null' || $valStr === 'undefined') return null;
 
-        // YYYY-MM-DD
+        // YYYY-MM-DD ou YYYY-MM-DD HH:MM:SS
         if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', $valStr, $m)) {
-            return DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]));
+            $d = DateTime::createFromFormat('!Y-m-d', sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]));
+            if ($d) return $d;
         }
         // DD/MM/YYYY ou DD-MM-YYYY ou DD.MM.YYYY
         if (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/', $valStr, $m)) {
-            return DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]));
+            $d = DateTime::createFromFormat('!Y-m-d', sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]));
+            if ($d) return $d;
         }
-        // DD/MM/YY
+        // DD/MM/YY ou DD-MM-YY ou DD.MM.YY
         if (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/', $valStr, $m)) {
             $ano = (int)$m[3];
             $anoComp = ($ano < 50) ? (2000 + $ano) : (1900 + $ano);
-            return DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-%02d', $anoComp, $m[2], $m[1]));
+            $d = DateTime::createFromFormat('!Y-m-d', sprintf('%04d-%02d-%02d', $anoComp, $m[2], $m[1]));
+            if ($d) return $d;
         }
         // DDMMAAAA sem barra
         if (preg_match('/^(\d{2})(\d{2})(\d{4})$/', $valStr, $m)) {
-            return DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]));
+            $d = DateTime::createFromFormat('!Y-m-d', sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]));
+            if ($d) return $d;
         }
         // Fallback DateTime
         try {
-            return new DateTime($valStr);
+            $dt = new DateTime($valStr);
+            $dt->setTime(0, 0, 0);
+            return $dt;
         } catch (Exception $e) {
             return null;
         }
@@ -433,6 +467,7 @@ try {
             $inspecoesRaw = $stmtInsp->fetchAll();
 
             $hojeObj = new DateTime('today');
+            $hojeObj->setTime(0, 0, 0);
 
             foreach ($inspecoesRaw as $m) {
                 $valStr = trim($m['validade_insp_saude'] ?? '');
@@ -442,6 +477,7 @@ try {
 
                 $valObj = parseDataValidadeFlexible($valStr);
                 if (!$valObj) continue;
+                $valObj->setTime(0, 0, 0);
 
                 $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
 
