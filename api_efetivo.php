@@ -474,8 +474,7 @@ try {
         }
     }
 
-    // 6. Alertas de Inspeções de Saúde (Todas as Vencidas e as que Vencem nos Próximos 90 dias)
-    // Monitora a Validade Insp. Saúde ou Data de Realização (+1 ano) do efetivo de forma totalmente resiliente
+    // 6. Alertas de Inspeções de Saúde (Validade Insp. Saúde <= 90 dias ou Vencidas)
     $alertasInspecao = [];
     $erroInspecao = null;
     $totalMilitaresAvaliados = 0;
@@ -492,8 +491,8 @@ try {
             }
         } catch (Exception $e) {}
 
-        // Busca todos os militares ativos diretamente da tabela users
-        $stmtInsp = $db->query("SELECT * FROM users u WHERE 1=1 $whereDeleted ORDER BY u.id ASC");
+        // Busca direta de todos os usuários cadastrados
+        $stmtInsp = $db->query("SELECT * FROM users ORDER BY id ASC");
         $inspecoesRaw = $stmtInsp->fetchAll();
         $totalMilitaresAvaliados = count($inspecoesRaw);
 
@@ -504,25 +503,11 @@ try {
             $secId = $m['section_id'] ?? ($m['secao_id'] ?? 0);
             $secaoNomeMilitar = $secaoNomeMap[$secId] ?? ($m['secao'] ?? 'DTCEA-SJ');
 
-            // Tenta obter validade de múltiplas chaves possíveis
-            $valStr = '';
-            $possibleValKeys = ['validade_insp_saude', 'validade_inspecao', 'validade_inspecao_saude', 'val_insp_saude', 'validade_saude', 'val_saude', 'validade'];
-            foreach ($possibleValKeys as $vk) {
-                if (!empty($m[$vk])) {
-                    $valStr = trim((string)$m[$vk]);
-                    break;
-                }
-            }
-
-            // Tenta obter data de realização de múltiplas chaves possíveis
-            $dtStr = '';
-            $possibleDtKeys = ['data_insp_saude', 'data_inspecao', 'data_inspecao_saude', 'dt_insp_saude', 'data_saude', 'dt_saude', 'data_realizacao'];
-            foreach ($possibleDtKeys as $dk) {
-                if (!empty($m[$dk])) {
-                    $dtStr = trim((string)$m[$dk]);
-                    break;
-                }
-            }
+            // 1. Campo direto validade_insp_saude ou aliases
+            $valStr = trim((string)($m['validade_insp_saude'] ?? ($m['validade_inspecao'] ?? ($m['validade_inspecao_saude'] ?? ($m['val_insp_saude'] ?? ($m['validade'] ?? ''))))));
+            
+            // 2. Campo direto data_insp_saude ou aliases
+            $dtStr = trim((string)($m['data_insp_saude'] ?? ($m['data_inspecao'] ?? ($m['data_inspecao_saude'] ?? ($m['dt_insp_saude'] ?? ($m['data_realizacao'] ?? ''))))));
 
             $valObj = null;
             if (!empty($valStr) && $valStr !== '0000-00-00' && $valStr !== '00/00/0000' && $valStr !== '-' && $valStr !== 'null') {
@@ -534,7 +519,7 @@ try {
                 $dtInspObj = parseDataValidadeFlexible($dtStr);
             }
 
-            // Se não tem validade explícita mas tem data de realização, calcula validade como +1 ano
+            // Se não tem validade explícita mas tem data de realização, projeta validade para +1 ano
             if (!$valObj && $dtInspObj) {
                 $valObj = clone $dtInspObj;
                 $valObj->modify('+1 year');
@@ -543,72 +528,65 @@ try {
             if (!$valObj) continue;
             $valObj->setTime(0, 0, 0);
 
+            // Calcula dias restantes: data_validade - data_atual
             $diffDays = (int)$hojeObj->diff($valObj)->format('%r%a');
 
-            // Monitora TODAS as inspeções cadastradas (Vencidas, Vencendo e Em Dia)
-            $statusTipo = 'valida';
-            $statusClass = 'bg-slate-50 border-slate-200';
-            $urgenciaBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-            $urgenciaTexto = "Vence em {$diffDays}d";
+            // Alerta se a validade for menor ou igual a 90 dias (inclui todas as já vencidas)
+            if ($diffDays <= 90) {
+                if ($diffDays < 0) {
+                    $statusTipo = 'vencida';
+                    $diasVenc = abs($diffDays);
+                    $statusClass = 'bg-rose-50/60 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
+                } elseif ($diffDays === 0) {
+                    $statusTipo = 'hoje';
+                    $statusClass = 'bg-rose-100/70 border-rose-300';
+                    $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
+                    $urgenciaTexto = "Vence Hoje!";
+                } elseif ($diffDays <= 30) {
+                    $statusTipo = 'critico';
+                    $statusClass = 'bg-rose-50/50 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } elseif ($diffDays <= 60) {
+                    $statusTipo = 'alerta';
+                    $statusClass = 'bg-amber-50/50 border-amber-200';
+                    $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } else {
+                    $statusTipo = 'aviso';
+                    $statusClass = 'bg-sky-50 border-sky-200';
+                    $urgenciaBadgeClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                }
 
-            if ($diffDays < 0) {
-                $statusTipo = 'vencida';
-                $diasVenc = abs($diffDays);
-                $statusClass = 'bg-rose-50/60 border-rose-200';
-                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                $urgenciaTexto = $diasVenc === 1 ? "Vencida há 1 dia" : "Vencida há {$diasVenc} dias";
-            } elseif ($diffDays === 0) {
-                $statusTipo = 'hoje';
-                $statusClass = 'bg-rose-100/70 border-rose-300';
-                $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
-                $urgenciaTexto = "Vence Hoje!";
-            } elseif ($diffDays <= 30) {
-                $statusTipo = 'critico';
-                $statusClass = 'bg-rose-50/50 border-rose-200';
-                $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-            } elseif ($diffDays <= 60) {
-                $statusTipo = 'alerta';
-                $statusClass = 'bg-amber-50/50 border-amber-200';
-                $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-            } elseif ($diffDays <= 90) {
-                $statusTipo = 'aviso';
-                $statusClass = 'bg-sky-50 border-sky-200';
-                $urgenciaBadgeClass = 'bg-sky-100 text-sky-800 border-sky-200';
-                $urgenciaTexto = "Vence em {$diffDays}d";
-            } else {
-                $statusTipo = 'valida';
-                $statusClass = 'bg-emerald-50/40 border-emerald-200';
-                $urgenciaBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
-                $urgenciaTexto = "Válida ({$diffDays}d)";
+                $alertasInspecao[] = [
+                    'tipo_item' => 'inspecao_saude',
+                    'id' => (int)$m['id'],
+                    'nome_completo' => $m['name'] ?? ($m['nome'] ?? ''),
+                    'nome_guerra' => $colWarName ? ($m[$colWarName] ?? '') : ($m['war_name'] ?? ($m['nome_guerra'] ?? '')),
+                    'posto_grad' => $colGrade ? ($m[$colGrade] ?? '') : ($m['grade'] ?? ($m['posto_grad'] ?? '')),
+                    'nome_formatado' => formatarMilitar($m),
+                    'especialidade' => $colSpecialty ? ($m[$colSpecialty] ?? '') : ($m['specialty'] ?? ($m['especialidade'] ?? '')),
+                    'saram' => $colSaram ? ($m[$colSaram] ?? '') : ($m['saram'] ?? ($m['saram_militar'] ?? '')),
+                    'secao' => abreviarNomeSecao($secaoNomeMilitar),
+                    'secao_original' => $secaoNomeMilitar,
+                    'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
+                    'validade_insp_saude' => $valObj->format('d/m/Y'),
+                    'validade_iso' => $valObj->format('Y-m-d'),
+                    'dias_restantes' => $diffDays,
+                    'status_tipo' => $statusTipo,
+                    'status_class' => $statusClass,
+                    'urgencia_badge_class' => $urgenciaBadgeClass,
+                    'urgencia_texto' => $urgenciaTexto
+                ];
             }
-
-            $alertasInspecao[] = [
-                'tipo_item' => 'inspecao_saude',
-                'id' => (int)$m['id'],
-                'nome_completo' => $m['name'] ?? ($m['nome'] ?? ''),
-                'nome_guerra' => $colWarName ? ($m[$colWarName] ?? '') : ($m['war_name'] ?? ($m['nome_guerra'] ?? '')),
-                'posto_grad' => $colGrade ? ($m[$colGrade] ?? '') : ($m['grade'] ?? ($m['posto_grad'] ?? '')),
-                'nome_formatado' => formatarMilitar($m),
-                'especialidade' => $colSpecialty ? ($m[$colSpecialty] ?? '') : ($m['specialty'] ?? ($m['especialidade'] ?? '')),
-                'saram' => $colSaram ? ($m[$colSaram] ?? '') : ($m['saram'] ?? ($m['saram_militar'] ?? '')),
-                'secao' => abreviarNomeSecao($secaoNomeMilitar),
-                'secao_original' => $secaoNomeMilitar,
-                'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
-                'validade_insp_saude' => $valObj->format('d/m/Y'),
-                'validade_iso' => $valObj->format('Y-m-d'),
-                'dias_restantes' => $diffDays,
-                'status_tipo' => $statusTipo,
-                'status_class' => $statusClass,
-                'urgencia_badge_class' => $urgenciaBadgeClass,
-                'urgencia_texto' => $urgenciaTexto
-            ];
         }
 
-        // Ordena para que os prazos mais urgentes e vencidos apareçam primeiro no topo
+        // Ordena para que os mais urgentes e vencidos apareçam primeiro no topo
         usort($alertasInspecao, function($a, $b) {
-            return strcmp($a['validade_iso'], $b['validade_iso']);
+            return $a['dias_restantes'] <=> $b['dias_restantes'];
         });
     } catch (Exception $e) {
         $erroInspecao = $e->getMessage();
