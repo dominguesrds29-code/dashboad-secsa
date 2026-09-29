@@ -1,3 +1,13 @@
+<?php
+// index.php
+// Painel Administrativo Integrado INTRAER - DTCEA-SJ
+// Acesso restrito a administradores autenticados
+
+require_once __DIR__ . '/auth.php';
+requireAdmin();
+
+$currentUser = getCurrentUser();
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -103,14 +113,16 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-6">
+        <div class="flex items-center gap-5">
           <div
             class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-slate-200">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span class="tracking-wide text-slate-300">Prontidão do Efetivo:</span>
             <span class="text-emerald-400 font-bold font-mono text-sm" id="header-prontidao">--%</span>
           </div>
+
           <div class="h-7 w-[1px] bg-white/10"></div>
+
           <div class="flex items-center gap-3">
             <div class="flex flex-col items-end">
               <span class="text-2xl font-bold text-white tracking-widest font-mono" id="relogio-tv">--:--:--</span>
@@ -122,6 +134,38 @@
               <span class="material-symbols-outlined text-[20px]">tv</span>
             </div>
           </div>
+
+          <div class="h-7 w-[1px] bg-white/10"></div>
+
+          <!-- Informações do Usuário Autenticado & Logout -->
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2.5 bg-white/10 pl-3 pr-2.5 py-1.5 rounded-lg border border-white/15">
+              <div class="w-7 h-7 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
+                <span class="material-symbols-outlined text-base">shield_person</span>
+              </div>
+              <div class="flex flex-col text-left">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-white leading-tight">
+                    <?= htmlspecialchars($currentUser['nome'] ?? 'Administrador') ?>
+                  </span>
+                  <span class="bg-amber-400 text-blue-950 font-black text-[9px] px-1.5 py-0.2 rounded font-mono uppercase tracking-wider">
+                    ADMIN
+                  </span>
+                </div>
+                <span class="text-[10px] text-blue-200/80 font-medium">
+                  <?= htmlspecialchars($currentUser['secao'] ?? 'SECSA') ?> <?= !empty($currentUser['saram']) ? '• SARAM ' . htmlspecialchars($currentUser['saram']) : '' ?>
+                </span>
+              </div>
+            </div>
+
+            <a href="logout.php" 
+               title="Sair do Sistema"
+               class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white font-semibold text-xs transition border border-rose-500/50 shadow-xs">
+              <span class="material-symbols-outlined text-[16px]">logout</span>
+              <span class="hidden sm:inline">Sair</span>
+            </a>
+          </div>
+
         </div>
       </div>
     </div>
