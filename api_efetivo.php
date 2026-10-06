@@ -145,11 +145,24 @@ try {
             $n = $connInfo['name'];
             $u = $connInfo['user'];
             $pw = $connInfo['pass'];
-            $db = new PDO("mysql:host=$h;port=$p;dbname=$n;charset=utf8mb4", $u, $pw);
-            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            $connectedDbInfo = "$u@$h:$p/$n";
-            break;
+            $tentativaDb = new PDO("mysql:host=$h;port=$p;dbname=$n;charset=utf8mb4", $u, $pw);
+            $tentativaDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $tentativaDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+
+            // Verifica se a tabela users existe e tem registros neste banco
+            $numUsers = 0;
+            try {
+                $numUsers = (int)$tentativaDb->query("SELECT COUNT(*) FROM users")->fetchColumn();
+            } catch (Exception $e) {}
+
+            if ($numUsers > 0) {
+                $db = $tentativaDb;
+                $connectedDbInfo = "$u@$h:$p/$n ($numUsers usuários)";
+                break;
+            } elseif (!$db) {
+                $db = $tentativaDb;
+                $connectedDbInfo = "$u@$h:$p/$n (0 usuários)";
+            }
         } catch (Exception $errConn) {
             $ultimoErroDb = $errConn;
         }
@@ -380,7 +393,7 @@ try {
             WHERE 1=1 
               $whereDeleted 
               $filterExpediente
-            GROUP BY s.id, secao
+            GROUP BY s.id, s.`$secCol`
             ORDER BY secao ASC
         ");
         $stmtSecoes->execute([$dataConsulta]);
@@ -679,15 +692,30 @@ try {
         'alertas_inspecao' => $alertasInspecao
     ];
 
-    if (isset($_GET['debug'])) {
+    if (isset($_GET['debug']) || $totalEfetivo === 0) {
+        $totalUsersNoDb = 0;
+        try {
+            $totalUsersNoDb = (int)$db->query("SELECT COUNT(*) FROM users")->fetchColumn();
+        } catch (Exception $e) {}
+        $secoesNoDb = [];
+        try {
+            $secoesNoDb = $db->query("SELECT * FROM `$secTable`")->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {}
+
         $responsePayload['debug'] = [
             'db_conexao' => $connectedDbInfo,
-            'total_avaliados' => $totalMilitaresAvaliados,
-            'total_alertas' => count($alertasInspecao),
+            'total_users_no_db' => $totalUsersNoDb,
+            'total_efetivo_filtrado' => $totalEfetivo,
+            'secoes_no_db' => $secoesNoDb,
+            'secTable' => $secTable,
+            'secCol' => $secCol,
+            'colSectionId' => $colSectionId,
+            'colEscala' => $colEscala,
+            'filterExpediente' => $filterExpediente,
+            'total_avaliados' => $totalMilitaresAvaliados ?? 0,
+            'total_alertas' => count($alertasInspecao ?? []),
             'colunas_users' => $userCols,
-            'col_validade' => $colValidadeInsp,
-            'col_data_insp' => $colDataInsp,
-            'erro_inspecao' => $erroInspecao
+            'erro_inspecao' => $erroInspecao ?? null
         ];
     }
 
