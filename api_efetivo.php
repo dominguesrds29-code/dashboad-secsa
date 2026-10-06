@@ -230,18 +230,68 @@ try {
         } catch (Exception $e) {}
     }
 
-    // Filtro para incluir pessoal ativo
+    // Filtro para incluir pessoal ativo e do expediente
     $whereDeleted = $colDeletedAt ? "AND (u.`$colDeletedAt` IS NULL OR u.`$colDeletedAt` = '0000-00-00 00:00:00' OR u.`$colDeletedAt` = '0000-00-00' OR TRIM(u.`$colDeletedAt`) = '')" : "";
-    $whereEscala = $colEscala ? "AND u.`$colEscala` = 0" : "";
+    $whereEscala = $colEscala ? "AND (u.`$colEscala` = 0 OR u.`$colEscala` IS NULL)" : "";
 
     $filterExpediente = "
         $whereEscala
         AND u.`$colSectionId` IS NOT NULL 
-        AND u.`$colSectionId` > 1
         AND s.id IS NOT NULL
-        AND s.id NOT IN (1, 8, 10, 11)
-        AND TRIM(COALESCE(s.`$secCol`, '')) NOT IN ('Torre de Controle', 'TORRE DE CONTROLE', 'TWR', 'EMS', 'EMS1', 'EMS-1 / CMA-2', 'Sala AIS', 'SALA AIS', 'AIS', 'Sem Seção', '')
+        AND TRIM(COALESCE(s.`$secCol`, '')) NOT IN ('Torre de Controle', 'TORRE DE CONTROLE', 'TWR', 'SO_TWR', 'EMS', 'EMS1', 'EMS-1 / CMA-2', 'SO_EMS1_CMA2', 'Sala AIS', 'SALA AIS', 'AIS', 'SO_AIS', 'Sem Seção', 'SEM SECAO', 'SEM_SECAO', '')
     ";
+
+    // Função de Auto-Sincronização / Auto-Cura para Produção
+    function autoHealEfetivo($db, $secTable, $secCol, $colSectionId, $colEscala, $colWarName) {
+        try {
+            $mapeamento = [
+                // INFORMÁTICA
+                ['sarams' => ['3930688', '393068', '4220559', '422055', '6158862', '6090710', '7295014', '6896227', '7702671', '7113145', '7702680', '7113331', '7702760', '7113420', '7702795', '7113455', '1744150', '1742468'], 'nomes' => ['RENATO DOMINGUES', 'FERNANDO BARBOSA', 'GABRIELA WINNIE', 'MARCOS VINICIUS LIMA', 'GUSTAVO HENRIQUE C', 'VICTOR LUIZ LOPES', 'KAYKY ESDRAS', 'MATHEUS VIEIRA DE CARVALHO', 'MILTON GON', 'CLAUDIONOR DE SOUZA'], 'sec_like' => '%INFORM%', 'escala' => 0],
+                // SECRETARIA ADMINISTRATIVA
+                ['sarams' => ['3930297', '4061616', '6158919', '6090729', '6240321', '6666147', '6490654', '6666279', '6490662', '6909477', '6547621', '7294867', '6896200', '7519963', '7046049'], 'nomes' => ['INGRID LAGO', 'LUCIMARA FERNANDES', 'CAROLINA DE ALENCAR', 'ALESSANDRA SUZANE', 'JOÃO PAULO DA SILVA SOUZA', 'SARAH PEREIRA', 'PAULO EDUARDO CORR', 'VITOR ELOI'], 'sec_like' => '%ADMINISTRATIVA%', 'escala' => 0],
+                // SECRETARIA OPERACIONAL
+                ['sarams' => ['4201973', '4240138', '6576532', '6338186', '6453961', '6909566', '6548776', '7703180', '7113200'], 'nomes' => ['TAÍS RIBEIRO', 'TAIS RIBEIRO', 'INGRID MARTINS', 'MARCELLE ALCANTARA', 'ANA CAROLINA POMPEO', 'LUCAS ROBERTO', 'JOÃO GABRIEL THOMAZ', 'JOAO GABRIEL THOMAZ'], 'sec_like' => '%SECRETARIA OPERACIONAL%', 'escala' => 0],
+                // ASSIPACEA
+                ['sarams' => ['4279328', '4379438', '4404653', '4404688', '4478142', '6158781', '6090702'], 'nomes' => ['ERICA FREIRE', 'JOSÉ CARLOS SOUSA', 'JOSE CARLOS SOUSA', 'KELLY CRISTINA BATALHA', 'RENATO DE OLIVEIRA FRANCONERE', 'CAROLINE RUSSELL'], 'sec_like' => '%ASSIPACEA%', 'escala' => 0],
+                // SIATO
+                ['sarams' => ['4238028', '4379454'], 'nomes' => ['MUNIQUE CAROLINE', 'BEATRIZ LAIA'], 'sec_like' => '%SIATO%', 'escala' => 0],
+                // ELETROMECÂNICA
+                ['sarams' => ['4380690', '4220567', '4220575', '4236106', '4404645', '6158587', '6089330', '6240348', '6576621', '6338208', '6909604', '6548849', '7519980', '7046057', '7702736', '7113390', '7702787', '7113447'], 'nomes' => ['BIANCA BEATRIZ', 'ALEX MESQUITA', 'FÁBIO DE SENE', 'FABIO DE SENE', 'MICHELY ADRIANA', 'GUILHERME RAMOS', 'WELTON NOGUEIRA', 'ALEX CONDE', 'MARRANI DE SOUZA', 'ANA FLÁVIA', 'ANA FLAVIA', 'LUAN RIBEIRO', 'LEONARDO MOREIRA', 'ENZO GABRIEL'], 'sec_like' => '%ELETROMEC%', 'escala' => 0],
+                // SUPRIMENTO
+                ['sarams' => ['6576583', '6338194', '7519890', '7046014'], 'nomes' => ['MAYSE CORREIA', 'GABRIEL ALVES MIRANDA'], 'sec_like' => '%SUPRIMENTO%', 'escala' => 0],
+                // ELETRÔNICA
+                ['sarams' => ['6155308'], 'nomes' => ['BRUNO JESUS DA SILVA'], 'sec_like' => '%ELETRÔNICA%', 'sec_fallback' => '%ELETRONICA%', 'escala' => 0],
+                // COMANDO
+                ['sarams' => ['4378725', '3363384', '2560399', '3646581', '3326489', '3646548'], 'nomes' => ['JORGE HENRIQUE DE OLIVEIRA', 'ANTÔNIO GLÁUDIO', 'ANTONIO GLAUDIO', 'LUCIANO FERREIRA ALVES'], 'sec_like' => '%COMANDO%', 'escala' => 0],
+                // TORRE DE CONTROLE
+                ['sarams' => ['4279824', '4379446', '4379535', '4379462', '4380720', '4220532', '4404610', '4404629', '4404696', '6088538', '6158935', '6090745', '6158943', '6090753', '6240356', '6576672', '6338224', '6453953', '6666139', '6490646', '6666325', '6490689'], 'nomes' => ['RAFAEL CIPRIANO', 'JONATHAN FERNANDES', 'THAIS VITOR', 'WELLINGTON FERREIRA', 'DIANE RIBEIRO', 'ANA CAROLINA THOMAZ', 'RAFAEL ESTEVES', 'BRUNO HENRIQUE', 'LETÍCIA CLAUDINO', 'LETICIA CLAUDINO', 'MARCELA SOUZA', 'JESSICA DOS ANJOS', 'ALISSON MEDEIROS', 'PEDRO LEIVA', 'THAMIRES MAGALHÃES', 'THAMIRES MAGALHAES', 'LÍLLIAN COUTINHO', 'LILLIAN COUTINHO'], 'sec_like' => '%TORRE%', 'escala' => 1],
+                // EMS-1 / CMA-2
+                ['sarams' => ['4220583', '4236114', '4404580', '6240291', '6909612', '6548857'], 'nomes' => ['RONALDO TELES', 'MICHELLI BEZERRA', 'LUIS EDUARDO GOMES', 'MILAINE MARQUES', 'NATÁLIA VASCONCELOS', 'NATALIA VASCONCELOS'], 'sec_like' => '%EMS%', 'escala' => 1],
+                // SALA AIS
+                ['sarams' => ['4040074', '4237668', '2264722', '4220516', '4404572', '4478177', '6240372', '6576630', '6338216', '6453988', '6909590', '6548814'], 'nomes' => ['LUCIANY DA SILVA', 'MARCOS PAULO GARCIA', 'PAULO CÉSAR LEITE', 'PAULO CESAR LEITE', 'MICHELE DE AZEVEDO', 'RICARDO ALCINO', 'KESSYA RODRIGUES', 'BRUNA PESSOA', 'MARCIO DA CUNHA', 'INÊS SAMPAIO', 'INES SAMPAIO'], 'sec_like' => '%AIS%', 'escala' => 1]
+            ];
+
+            foreach ($mapeamento as $grp) {
+                $secStmt = $db->prepare("SELECT id FROM `$secTable` WHERE `$secCol` LIKE ? LIMIT 1");
+                $secStmt->execute([$grp['sec_like']]);
+                $secId = $secStmt->fetchColumn();
+                if (!$secId && !empty($grp['sec_fallback'])) {
+                    $secStmt->execute([$grp['sec_fallback']]);
+                    $secId = $secStmt->fetchColumn();
+                }
+                if (!$secId) continue;
+
+                foreach ($grp['sarams'] as $saram) {
+                    $db->exec("UPDATE users SET `$colSectionId` = $secId, `$colEscala` = {$grp['escala']} WHERE REPLACE(REPLACE(REPLACE(saram, '.', ''), '-', ''), ' ', '') LIKE '%$saram%'");
+                }
+                foreach ($grp['nomes'] as $nome) {
+                    $db->exec("UPDATE users SET `$colSectionId` = $secId, `$colEscala` = {$grp['escala']} WHERE name LIKE '%$nome%'");
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Erro no autoHealEfetivo: " . $e->getMessage());
+        }
+    }
 
     // 1. Total Geral do Efetivo do Expediente
     $totalEfetivo = 0;
@@ -253,6 +303,18 @@ try {
             WHERE 1=1 $whereDeleted $filterExpediente
         ");
         $totalEfetivo = (int)($stmtGeral->fetch()['total'] ?? 0);
+
+        // Se estiver zerado (ex: banco de produção sem migração de seção prévia), executa auto-cura
+        if ($totalEfetivo === 0) {
+            autoHealEfetivo($db, $secTable, $secCol, $colSectionId, $colEscala, $colWarName);
+            $stmtGeral = $db->query("
+                SELECT COUNT(u.id) as total 
+                FROM users u 
+                JOIN `$secTable` s ON u.`$colSectionId` = s.id 
+                WHERE 1=1 $whereDeleted $filterExpediente
+            ");
+            $totalEfetivo = (int)($stmtGeral->fetch()['total'] ?? 0);
+        }
     } catch (Exception $e) {
         error_log("Erro no calculo do total de efetivo: " . $e->getMessage());
     }
