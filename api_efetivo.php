@@ -107,8 +107,8 @@ function abreviarNomeSecao($secao) {
 }
 
 try {
-    // Tentativa com as credenciais carregadas ou padrões e múltiplos bancos de dados
-    $candidateDbs = array_unique(array_filter([$db_name, 'efetivosj', 'ctr_efetivo', 'sgp_dtceasj', 'dtceasj', 'painel']));
+    // Conexão com o banco de dados oficial efetivosj / ctr_efetivo
+    $candidateDbs = array_unique(array_filter([$db_name, 'efetivosj', 'ctr_efetivo', 'painel']));
     $candidateHosts = array_unique(array_filter([$db_host, '127.0.0.1', 'localhost']));
     $credentialPairs = [
         ['user' => $db_user, 'pass' => $db_pass],
