@@ -61,7 +61,7 @@ $currentUser = getCurrentUser();
     .animate-marquee-smooth {
       display: inline-flex;
       white-space: nowrap;
-      animation: marquee 600s linear infinite;
+      animation: marquee 1500s linear infinite;
     }
 
     .animate-marquee-smooth:hover {
@@ -635,10 +635,10 @@ $currentUser = getCurrentUser();
       }
     }
 
-    // Instâncias de auto-scroll para os cards com listas dinâmicas (velocidade lenta e confortável: 0.18)
-    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
-    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
-    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
+    // Instâncias de auto-scroll para os cards com listas dinâmicas (velocidade ultra-lenta: 0.08 e pausa de 6s)
+    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
 
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
     async function carregarDadosEfetivo() {
