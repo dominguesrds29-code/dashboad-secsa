@@ -68,9 +68,16 @@ $currentUser = getCurrentUser();
       animation-play-state: paused;
     }
 
+    .custom-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 rgba(241, 245, 249, 0.6);
+      scroll-behavior: auto;
+    }
+
     .custom-scrollbar::-webkit-scrollbar {
       width: 4px;
       height: 4px;
+      display: block;
     }
 
     .custom-scrollbar::-webkit-scrollbar-track {
@@ -82,7 +89,20 @@ $currentUser = getCurrentUser();
       border-radius: 4px;
     }
 
-    ::-webkit-scrollbar {
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    body::-webkit-scrollbar {
       display: none;
     }
   </style>
@@ -260,7 +280,7 @@ $currentUser = getCurrentUser();
                 id="secoes-count-badge">0 Seções</span>
             </div>
 
-            <div class="flex-1 overflow-y-auto custom-scrollbar mt-1.5 pr-1">
+            <div class="flex-1 overflow-y-auto no-scrollbar mt-1.5 pr-1">
               <table class="w-full text-sm text-left">
                 <thead
                   class="text-xs font-bold text-slate-400 uppercase sticky top-0 bg-slate-50 py-1 border-b border-slate-200/40">
@@ -313,11 +333,11 @@ $currentUser = getCurrentUser();
       <!-- =====================================================================
            SEÇÃO DIREITA: 2 CARDS EMPILHADOS (PUBLICOU NO BCA & PRAZOS)
            ===================================================================== -->
-      <div class="flex flex-col gap-6 h-full overflow-hidden">
+      <div class="flex flex-col gap-6 h-full overflow-hidden min-h-0">
 
         <!-- CARD SUPERIOR: PUBLICOU NO BCA -->
         <section
-          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1">
+          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1 min-h-0">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-2">
               <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -336,7 +356,7 @@ $currentUser = getCurrentUser();
           </div>
 
           <!-- Conteúdo Rolável das Notícias do BCA -->
-          <div id="bca-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5">
+          <div id="bca-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5 min-h-0">
             <div class="py-8 text-center text-slate-400 text-sm">
               <div class="flex items-center justify-center gap-2">
                 <span class="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
@@ -348,7 +368,7 @@ $currentUser = getCurrentUser();
 
         <!-- CARD INFERIOR: PRAZOS CRÍTICOS E ENTREGAS -->
         <section
-          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1">
+          class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden p-5 flex-1 min-h-0">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-2">
               <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -364,7 +384,7 @@ $currentUser = getCurrentUser();
           </div>
 
           <!-- Conteúdo Rolável dos Prazos / Inspeções de Saúde -->
-          <div id="prazos-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5">
+          <div id="prazos-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5 min-h-0">
             <div class="py-8 text-center text-slate-400 text-sm">
               <div class="flex items-center justify-center gap-2">
                 <span class="w-4 h-4 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></span>
@@ -436,6 +456,189 @@ $currentUser = getCurrentUser();
         .replace(/SECRETARIA ADMINISTRATIVA/gi, 'SEC. ADMINISTRATIVA')
         .replace(/SECRETARIA OPERACIONAL/gi, 'SEC. OPERACIONAL');
     }
+
+    // =========================================================================
+    // GERENCIADOR DE ROLAGEM VERTICAL AUTOMÁTICA INTELIGENTE (TV / DASHBOARD)
+    // =========================================================================
+    class CardAutoScrollManager {
+      constructor(elementId, options = {}) {
+        this.elementId = elementId;
+        this.speed = options.speed || 0.35; // Pixels por frame
+        this.pauseTopMs = options.pauseTopMs || 3500; // Pausa no topo
+        this.pauseBottomMs = options.pauseBottomMs || 3500; // Pausa no rodapé
+        this.currentScroll = 0;
+        this.animationFrameId = null;
+        this.pauseTimeout = null;
+        this.resumeTimeout = null;
+        this.isPausedByUser = false;
+        this.initEvents();
+      }
+
+      getElement() {
+        return document.getElementById(this.elementId);
+      }
+
+      initEvents() {
+        const el = this.getElement();
+        if (!el || el._autoScrollBound) return;
+
+        // Pausa quando o usuário passar o mouse ou focar
+        el.addEventListener('mouseenter', () => {
+          this.isPausedByUser = true;
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+        });
+
+        el.addEventListener('mouseleave', () => {
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+          this.resumeTimeout = setTimeout(() => {
+            const curEl = this.getElement();
+            if (curEl) this.currentScroll = curEl.scrollTop;
+            this.isPausedByUser = false;
+          }, 1500);
+        });
+
+        // Atualiza posição se houver rolagem manual
+        el.addEventListener('scroll', () => {
+          if (this.isPausedByUser) {
+            this.currentScroll = el.scrollTop;
+          }
+        }, { passive: true });
+
+        // Suporte a toque para telas touchscreen
+        el.addEventListener('touchstart', () => {
+          this.isPausedByUser = true;
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+        }, { passive: true });
+
+        el.addEventListener('touchend', () => {
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+          this.resumeTimeout = setTimeout(() => {
+            const curEl = this.getElement();
+            if (curEl) this.currentScroll = curEl.scrollTop;
+            this.isPausedByUser = false;
+          }, 3000);
+        }, { passive: true });
+
+        el._autoScrollBound = true;
+      }
+
+      stop() {
+        if (this.animationFrameId) {
+          cancelAnimationFrame(this.animationFrameId);
+          this.animationFrameId = null;
+        }
+        if (this.pauseTimeout) {
+          clearTimeout(this.pauseTimeout);
+          this.pauseTimeout = null;
+        }
+        if (this.resumeTimeout) {
+          clearTimeout(this.resumeTimeout);
+          this.resumeTimeout = null;
+        }
+      }
+
+      start() {
+        this.stop();
+        this.initEvents();
+
+        const el = this.getElement();
+        if (!el) return;
+
+        // Pequeno atraso para garantir cálculo de dimensões após renderização do DOM
+        setTimeout(() => {
+          const maxScroll = el.scrollHeight - el.clientHeight;
+          if (maxScroll <= 4) {
+            el.scrollTop = 0;
+            this.currentScroll = 0;
+            return;
+          }
+
+          this.currentScroll = el.scrollTop || 0;
+          // Inicia com pausa inicial no topo para leitura
+          this.pauseTimeout = setTimeout(() => {
+            this.loopScroll();
+          }, this.pauseTopMs);
+        }, 300);
+      }
+
+      loopScroll() {
+        this.stop();
+        const el = this.getElement();
+        if (!el) return;
+
+        const tick = () => {
+          const maxScroll = el.scrollHeight - el.clientHeight;
+
+          if (maxScroll <= 4) {
+            this.stop();
+            el.scrollTop = 0;
+            this.currentScroll = 0;
+            return;
+          }
+
+          if (!this.isPausedByUser) {
+            this.currentScroll += this.speed;
+            el.scrollTop = this.currentScroll;
+
+            if (this.currentScroll >= maxScroll) {
+              this.currentScroll = maxScroll;
+              el.scrollTop = maxScroll;
+              // Pausa no final da lista
+              this.pauseTimeout = setTimeout(() => {
+                this.smoothScrollToTop(el, () => {
+                  // Pausa novamente no topo e reinicia ciclo
+                  this.pauseTimeout = setTimeout(() => {
+                    this.loopScroll();
+                  }, this.pauseTopMs);
+                });
+              }, this.pauseBottomMs);
+              return;
+            }
+          }
+
+          this.animationFrameId = requestAnimationFrame(tick);
+        };
+
+        this.animationFrameId = requestAnimationFrame(tick);
+      }
+
+      smoothScrollToTop(el, onComplete) {
+        const startPos = el.scrollTop;
+        const duration = 1200; // 1.2s de transição suave de volta ao topo
+        const startTime = performance.now();
+
+        const anim = (currentTime) => {
+          if (this.isPausedByUser) {
+            this.currentScroll = el.scrollTop;
+            if (onComplete) onComplete();
+            return;
+          }
+
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          // Easing suave (quadrático)
+          const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+          this.currentScroll = startPos * (1 - ease);
+          el.scrollTop = this.currentScroll;
+
+          if (progress < 1) {
+            this.animationFrameId = requestAnimationFrame(anim);
+          } else {
+            this.currentScroll = 0;
+            el.scrollTop = 0;
+            if (onComplete) onComplete();
+          }
+        };
+
+        this.animationFrameId = requestAnimationFrame(anim);
+      }
+    }
+
+    // Instâncias de auto-scroll para os cards com listas dinâmicas
+    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
+    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
+    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
 
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
     async function carregarDadosEfetivo() {
@@ -562,6 +765,9 @@ $currentUser = getCurrentUser();
             </div>
           `).join('');
         }
+        if (typeof autoScrollAfastados !== 'undefined') {
+          autoScrollAfastados.start();
+        }
 
         // 5. Renderiza Prazos Críticos & Entregas (Inspeções de Saúde nos próximos 90 dias / Vencidas)
         const prazosCard = document.getElementById('prazos-card-conteudo');
@@ -661,6 +867,8 @@ $currentUser = getCurrentUser();
               `;
             }).join('');
           }
+          // Aciona auto-scroll vertical inteligente se o conteúdo exceder a tela
+          autoScrollPrazos.start();
         }
 
       } catch (err) {
@@ -673,7 +881,7 @@ $currentUser = getCurrentUser();
       }
     }
 
-    // Executa a primeira chamada imediatamente e repete a cada 30 segundos
+    // Executa a primeira chamada de efetivo imediatamente e repete a cada 30 segundos
     carregarDadosEfetivo();
     setInterval(carregarDadosEfetivo, 30000);
 
@@ -776,6 +984,9 @@ $currentUser = getCurrentUser();
             </div>
           `;
         }
+
+        // Aciona auto-scroll vertical inteligente se o conteúdo do BCA exceder a tela
+        autoScrollBCA.start();
       } catch (err) {
         console.warn('Erro ao carregar citações do BCA:', err);
       }
