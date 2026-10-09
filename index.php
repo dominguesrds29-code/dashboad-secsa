@@ -61,7 +61,7 @@ $currentUser = getCurrentUser();
     .animate-marquee-smooth {
       display: inline-flex;
       white-space: nowrap;
-      animation: marquee 800s linear infinite;
+      animation: marquee 1000s linear infinite;
     }
 
     .animate-marquee-smooth:hover {
