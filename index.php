@@ -309,18 +309,18 @@ $currentUser = getCurrentUser();
 
           <!-- Militares em Situação Especial / Afastamentos do Dia (5 Colunas) -->
           <div
-            class="md:col-span-5 flex flex-col bg-slate-50/50 rounded-xl border border-slate-100 p-3.5 overflow-hidden">
-            <div class="flex items-center justify-between pb-2.5 border-b border-slate-200/60 shrink-0">
-              <span class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <span class="material-symbols-outlined text-base text-rose-500">event_busy</span>
+            class="md:col-span-5 flex flex-col bg-slate-50/50 rounded-xl border border-slate-100 p-3 overflow-hidden">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 shrink-0">
+              <span class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] text-rose-500">event_busy</span>
                 Afastamentos do Dia
               </span>
-              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700"
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700"
                 id="afastados-count-badge">0</span>
             </div>
 
-            <div class="flex-1 overflow-y-auto custom-scrollbar mt-2 pr-1 space-y-2.5" id="lista-afastados-corpo">
-              <div class="py-8 text-center text-slate-400 text-sm">
+            <div class="flex-1 overflow-y-auto custom-scrollbar mt-1.5 pr-1 space-y-2" id="lista-afastados-corpo">
+              <div class="py-8 text-center text-slate-400 text-xs">
                 Carregando lista de afastamentos...
               </div>
             </div>
@@ -463,9 +463,9 @@ $currentUser = getCurrentUser();
     class CardAutoScrollManager {
       constructor(elementId, options = {}) {
         this.elementId = elementId;
-        this.speed = options.speed || 0.35; // Pixels por frame
-        this.pauseTopMs = options.pauseTopMs || 3500; // Pausa no topo
-        this.pauseBottomMs = options.pauseBottomMs || 3500; // Pausa no rodapé
+        this.speed = options.speed || 0.18; // Pixels por frame (velocidade suave e lenta para leitura)
+        this.pauseTopMs = options.pauseTopMs || 4000; // Pausa no topo
+        this.pauseBottomMs = options.pauseBottomMs || 4000; // Pausa no rodapé
         this.currentScroll = 0;
         this.animationFrameId = null;
         this.pauseTimeout = null;
@@ -635,10 +635,10 @@ $currentUser = getCurrentUser();
       }
     }
 
-    // Instâncias de auto-scroll para os cards com listas dinâmicas
-    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
-    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
-    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.35, pauseTopMs: 3500, pauseBottomMs: 3500 });
+    // Instâncias de auto-scroll para os cards com listas dinâmicas (velocidade lenta e confortável: 0.18)
+    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
+    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
+    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.18, pauseTopMs: 4000, pauseBottomMs: 4000 });
 
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
     async function carregarDadosEfetivo() {
@@ -747,19 +747,19 @@ $currentUser = getCurrentUser();
         if (afastados.length === 0) {
           listaAfastadosEl.innerHTML = `
             <div class="h-full flex flex-col items-center justify-center py-6 text-center text-slate-400">
-              <span class="material-symbols-outlined text-emerald-500 text-3xl mb-1">check_circle</span>
-              <p class="text-sm font-bold text-slate-700">Todos em Pronto Emprego</p>
-              <p class="text-xs text-slate-400 mt-0.5 font-medium">Nenhum afastamento lançado hoje.</p>
+              <span class="material-symbols-outlined text-emerald-500 text-2xl mb-1">check_circle</span>
+              <p class="text-xs font-bold text-slate-700">Todos em Pronto Emprego</p>
+              <p class="text-[11px] text-slate-400 mt-0.5 font-medium">Nenhum afastamento lançado hoje.</p>
             </div>
           `;
         } else {
           listaAfastadosEl.innerHTML = afastados.map(m => `
-            <div class="p-2.5 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-between hover:border-slate-300 transition">
+            <div class="p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between hover:border-slate-300 transition">
               <div class="min-w-0 pr-2">
-                <div class="text-sm font-bold text-slate-800 truncate">${m.nome_formatado}</div>
-                <div class="text-xs text-slate-400 font-medium truncate">${formatarNomeSecao(m.secao)}</div>
+                <div class="text-xs font-bold text-slate-800 truncate leading-tight">${m.nome_formatado}</div>
+                <div class="text-[11px] text-slate-400 font-medium truncate mt-0.5">${formatarNomeSecao(m.secao)}</div>
               </div>
-              <span class="px-2.5 py-1 rounded-full text-xs font-bold shrink-0 border ${m.status_class || 'bg-slate-100 text-slate-700 border-slate-200'}">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 border ${m.status_class || 'bg-slate-100 text-slate-700 border-slate-200'}">
                 ${m.status_label}
               </span>
             </div>
