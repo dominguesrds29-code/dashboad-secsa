@@ -372,23 +372,23 @@ $currentUser = getCurrentUser();
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-2">
               <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span class="material-symbols-outlined text-rose-600 text-xl">medical_services</span>
+                <span class="material-symbols-outlined text-rose-600 text-xl">event_upcoming</span>
                 Prazos Críticos e Entregas
               </h3>
               <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
             </div>
             <span id="prazos-total-inspecoes-badge"
               class="text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5">
-              Carregando inspeções...
+              Carregando prazos...
             </span>
           </div>
 
-          <!-- Conteúdo Rolável dos Prazos / Inspeções de Saúde -->
+          <!-- Conteúdo Rolável dos Prazos / Tarefas e Inspeções -->
           <div id="prazos-card-conteudo" class="flex-1 overflow-y-auto custom-scrollbar my-2 pr-1 space-y-2.5 min-h-0">
             <div class="py-8 text-center text-slate-400 text-sm">
               <div class="flex items-center justify-center gap-2">
                 <span class="w-4 h-4 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></span>
-                <span>Verificando validades de inspeção de saúde...</span>
+                <span>Verificando tarefas e validades críticas...</span>
               </div>
             </div>
           </div>
@@ -459,18 +459,32 @@ $currentUser = getCurrentUser();
 
     // =========================================================================
     // GERENCIADOR DE ROLAGEM VERTICAL AUTOMÁTICA INTELIGENTE (TV / DASHBOARD)
+    // ROLAGEM ULTRA-SUAVE COM ACELERAÇÃO POR GPU (SEM TRANQUINHOS)
     // =========================================================================
     class CardAutoScrollManager {
       constructor(elementId, options = {}) {
         this.elementId = elementId;
-        this.speed = options.speed || 0.18; // Pixels por frame (velocidade suave e lenta para leitura)
-        this.pauseTopMs = options.pauseTopMs || 4000; // Pausa no topo
-        this.pauseBottomMs = options.pauseBottomMs || 4000; // Pausa no rodapé
+        // Velocidade contínua em pixels por segundo com delta-time real (sem quantização por pixel)
+        if (options.pixelsPerSecond) {
+          this.pixelsPerSecond = options.pixelsPerSecond;
+        } else if (options.speed) {
+          // Converte para pixels por segundo: 0.08 -> 8.5 px/s (leitura perfeita e constante na TV)
+          this.pixelsPerSecond = options.speed <= 0.1 ? 8.5 : (options.speed * 60);
+        } else {
+          this.pixelsPerSecond = 8.5;
+        }
+        this.pauseTopMs = options.pauseTopMs || 6000;       // Pausa confortável no topo
+        this.pauseBottomMs = options.pauseBottomMs || 6000; // Pausa confortável no rodapé
+        
         this.currentScroll = 0;
+        this.maxScroll = 0;
         this.animationFrameId = null;
         this.pauseTimeout = null;
         this.resumeTimeout = null;
         this.isPausedByUser = false;
+        this.lastTimestamp = null;
+        this.isReturningToTop = false;
+
         this.initEvents();
       }
 
@@ -478,11 +492,126 @@ $currentUser = getCurrentUser();
         return document.getElementById(this.elementId);
       }
 
+      // Obtém ou cria a trilha interna acelerada por hardware GPU
+      getTrack() {
+        const el = this.getElement();
+        if (!el) return null;
+
+        let track = el.querySelector(':scope > .auto-scroll-track');
+        if (!track) {
+          track = document.createElement('div');
+          track.className = 'auto-scroll-track';
+          track.style.willChange = 'transform';
+          track.style.transform = 'translate3d(0, 0, 0)';
+          track.style.transition = 'none';
+          track.style.width = '100%';
+
+          // Preserva classes de espaçamento vertical (space-y-*, gap-*) dos itens filhos
+          for (const cls of Array.from(el.classList)) {
+            if (cls.startsWith('space-y-') || cls.startsWith('gap-')) {
+              track.classList.add(cls);
+            }
+          }
+
+          // Move os filhos existentes para a trilha acelerada
+          while (el.firstChild) {
+            track.appendChild(el.firstChild);
+          }
+          el.appendChild(track);
+        }
+
+        // Garante que o container corte o excesso e sirva de referência de posicionamento
+        el.style.overflow = 'hidden';
+        el.style.position = 'relative';
+
+        return track;
+      }
+
+      // Barra de rolagem visual minimalista e ultra-fluida
+      updateScrollbar() {
+        const el = this.getElement();
+        if (!el) return;
+
+        let bar = el.querySelector(':scope > .auto-scroll-bar');
+        if (!bar) {
+          bar = document.createElement('div');
+          bar.className = 'auto-scroll-bar';
+          bar.style.position = 'absolute';
+          bar.style.right = '2px';
+          bar.style.top = '4px';
+          bar.style.bottom = '4px';
+          bar.style.width = '4px';
+          bar.style.borderRadius = '4px';
+          bar.style.pointerEvents = 'none';
+          bar.style.backgroundColor = 'rgba(203, 213, 225, 0.3)';
+          bar.style.zIndex = '15';
+          bar.style.transition = 'opacity 0.3s ease';
+
+          const thumb = document.createElement('div');
+          thumb.className = 'auto-scroll-thumb';
+          thumb.style.width = '100%';
+          thumb.style.borderRadius = '4px';
+          thumb.style.backgroundColor = 'rgba(148, 163, 184, 0.7)';
+          thumb.style.willChange = 'transform, height';
+          thumb.style.transition = 'none';
+          bar.appendChild(thumb);
+          el.appendChild(bar);
+        }
+
+        const thumb = bar.querySelector('.auto-scroll-thumb');
+        if (this.maxScroll <= 4) {
+          bar.style.opacity = '0';
+          return;
+        }
+
+        bar.style.opacity = '1';
+        const track = this.getTrack();
+        const contentHeight = track ? (track.scrollHeight || track.offsetHeight) : 1;
+        const containerHeight = el.clientHeight;
+        const availableBarHeight = Math.max(10, containerHeight - 8);
+        const ratio = Math.min(1, containerHeight / Math.max(1, contentHeight));
+        const thumbHeight = Math.max(24, ratio * availableBarHeight);
+        
+        const scrollPercent = this.maxScroll > 0 ? (this.currentScroll / this.maxScroll) : 0;
+        const thumbTop = scrollPercent * (availableBarHeight - thumbHeight);
+
+        if (thumb) {
+          thumb.style.height = `${thumbHeight}px`;
+          thumb.style.transform = `translate3d(0, ${thumbTop.toFixed(2)}px, 0)`;
+        }
+      }
+
+      applyScroll() {
+        const track = this.getTrack();
+        if (!track) return;
+        track.style.transform = `translate3d(0, -${this.currentScroll.toFixed(2)}px, 0)`;
+        this.updateScrollbar();
+      }
+
+      updateBounds() {
+        const el = this.getElement();
+        const track = this.getTrack();
+        if (!el || !track) {
+          this.maxScroll = 0;
+          return;
+        }
+
+        const contentHeight = track.scrollHeight || track.offsetHeight;
+        const containerHeight = el.clientHeight;
+        this.maxScroll = Math.max(0, contentHeight - containerHeight);
+        
+        if (this.currentScroll > this.maxScroll) {
+          this.currentScroll = this.maxScroll;
+          this.applyScroll();
+        }
+        this.updateScrollbar();
+      }
+
       initEvents() {
         const el = this.getElement();
         if (!el || el._autoScrollBound) return;
 
-        // Pausa quando o usuário passar o mouse ou focar
+        // Pausa quando o usuário passar o mouse para leitura estática
         el.addEventListener('mouseenter', () => {
           this.isPausedByUser = true;
           if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
@@ -491,32 +620,65 @@ $currentUser = getCurrentUser();
         el.addEventListener('mouseleave', () => {
           if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
           this.resumeTimeout = setTimeout(() => {
-            const curEl = this.getElement();
-            if (curEl) this.currentScroll = curEl.scrollTop;
             this.isPausedByUser = false;
+            this.lastTimestamp = performance.now();
+            if (!this.isReturningToTop && !this.animationFrameId) {
+              this.loopScroll();
+            }
           }, 1500);
         });
 
-        // Atualiza posição se houver rolagem manual
-        el.addEventListener('scroll', () => {
-          if (this.isPausedByUser) {
-            this.currentScroll = el.scrollTop;
-          }
+        // Suporte a rolagem manual fluida via mousewheel
+        el.addEventListener('wheel', (e) => {
+          if (this.maxScroll <= 4) return;
+          e.preventDefault();
+          this.isPausedByUser = true;
+          if (this.pauseTimeout) clearTimeout(this.pauseTimeout);
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+
+          this.stop();
+          this.currentScroll = Math.max(0, Math.min(this.maxScroll, this.currentScroll + e.deltaY));
+          this.applyScroll();
+
+          this.resumeTimeout = setTimeout(() => {
+            this.isPausedByUser = false;
+            this.lastTimestamp = performance.now();
+            this.loopScroll();
+          }, 2500);
+        }, { passive: false });
+
+        // Suporte para telas touch
+        let touchStartY = 0;
+        let scrollStartY = 0;
+        el.addEventListener('touchstart', (e) => {
+          if (this.maxScroll <= 4) return;
+          this.isPausedByUser = true;
+          if (this.pauseTimeout) clearTimeout(this.pauseTimeout);
+          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+          this.stop();
+          touchStartY = e.touches[0].clientY;
+          scrollStartY = this.currentScroll;
         }, { passive: true });
 
-        // Suporte a toque para telas touchscreen
-        el.addEventListener('touchstart', () => {
-          this.isPausedByUser = true;
-          if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
+        el.addEventListener('touchmove', (e) => {
+          if (this.maxScroll <= 4) return;
+          const deltaY = touchStartY - e.touches[0].clientY;
+          this.currentScroll = Math.max(0, Math.min(this.maxScroll, scrollStartY + deltaY));
+          this.applyScroll();
         }, { passive: true });
 
         el.addEventListener('touchend', () => {
+          if (this.maxScroll <= 4) return;
           if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
           this.resumeTimeout = setTimeout(() => {
-            const curEl = this.getElement();
-            if (curEl) this.currentScroll = curEl.scrollTop;
             this.isPausedByUser = false;
+            this.lastTimestamp = performance.now();
+            this.loopScroll();
           }, 3000);
+        }, { passive: true });
+
+        window.addEventListener('resize', () => {
+          this.updateBounds();
         }, { passive: true });
 
         el._autoScrollBound = true;
@@ -535,6 +697,7 @@ $currentUser = getCurrentUser();
           clearTimeout(this.resumeTimeout);
           this.resumeTimeout = null;
         }
+        this.isReturningToTop = false;
       }
 
       start() {
@@ -544,89 +707,113 @@ $currentUser = getCurrentUser();
         const el = this.getElement();
         if (!el) return;
 
-        // Pequeno atraso para garantir cálculo de dimensões após renderização do DOM
+        // Aguarda renderização completa do layout no DOM
         setTimeout(() => {
-          const maxScroll = el.scrollHeight - el.clientHeight;
-          if (maxScroll <= 4) {
-            el.scrollTop = 0;
+          this.updateBounds();
+          if (this.maxScroll <= 4) {
             this.currentScroll = 0;
+            this.applyScroll();
             return;
           }
 
-          this.currentScroll = el.scrollTop || 0;
-          // Inicia com pausa inicial no topo para leitura
+          this.currentScroll = 0;
+          this.applyScroll();
+
+          // Pausa no topo para leitura inicial antes de descer
           this.pauseTimeout = setTimeout(() => {
             this.loopScroll();
           }, this.pauseTopMs);
-        }, 300);
+        }, 150);
       }
 
       loopScroll() {
         this.stop();
         const el = this.getElement();
-        if (!el) return;
+        const track = this.getTrack();
+        if (!el || !track) return;
 
-        const tick = () => {
-          const maxScroll = el.scrollHeight - el.clientHeight;
+        this.updateBounds();
+        if (this.maxScroll <= 4) {
+          this.currentScroll = 0;
+          this.applyScroll();
+          return;
+        }
 
-          if (maxScroll <= 4) {
-            this.stop();
-            el.scrollTop = 0;
-            this.currentScroll = 0;
+        track.style.transition = 'none';
+        this.lastTimestamp = performance.now();
+
+        const tick = (now) => {
+          if (this.isPausedByUser) {
+            this.lastTimestamp = now;
+            this.animationFrameId = requestAnimationFrame(tick);
             return;
           }
 
-          if (!this.isPausedByUser) {
-            this.currentScroll += this.speed;
-            el.scrollTop = this.currentScroll;
+          // Cálculo delta-time para garantir velocidade perfeitamente constante
+          const dt = Math.min((now - (this.lastTimestamp || now)) / 1000, 0.1);
+          this.lastTimestamp = now;
 
-            if (this.currentScroll >= maxScroll) {
-              this.currentScroll = maxScroll;
-              el.scrollTop = maxScroll;
-              // Pausa no final da lista
-              this.pauseTimeout = setTimeout(() => {
-                this.smoothScrollToTop(el, () => {
-                  // Pausa novamente no topo e reinicia ciclo
-                  this.pauseTimeout = setTimeout(() => {
-                    this.loopScroll();
-                  }, this.pauseTopMs);
-                });
-              }, this.pauseBottomMs);
-              return;
-            }
+          this.currentScroll += this.pixelsPerSecond * dt;
+
+          if (this.currentScroll >= this.maxScroll) {
+            this.currentScroll = this.maxScroll;
+            this.applyScroll();
+
+            // Pausa no final da lista
+            this.pauseTimeout = setTimeout(() => {
+              this.smoothScrollToTop(() => {
+                // Pausa novamente no topo e reinicia ciclo
+                this.pauseTimeout = setTimeout(() => {
+                  this.loopScroll();
+                }, this.pauseTopMs);
+              });
+            }, this.pauseBottomMs);
+            return;
           }
 
+          this.applyScroll();
           this.animationFrameId = requestAnimationFrame(tick);
         };
 
         this.animationFrameId = requestAnimationFrame(tick);
       }
 
-      smoothScrollToTop(el, onComplete) {
-        const startPos = el.scrollTop;
-        const duration = 1200; // 1.2s de transição suave de volta ao topo
+      smoothScrollToTop(onComplete) {
+        const track = this.getTrack();
+        if (!track) {
+          if (onComplete) onComplete();
+          return;
+        }
+
+        this.stop();
+        this.isReturningToTop = true;
+
+        const startPos = this.currentScroll;
+        // Duração suave entre 1.2s e 2.0s
+        const duration = Math.min(2000, Math.max(1200, startPos * 2.2));
         const startTime = performance.now();
 
         const anim = (currentTime) => {
           if (this.isPausedByUser) {
-            this.currentScroll = el.scrollTop;
+            this.isReturningToTop = false;
             if (onComplete) onComplete();
             return;
           }
 
           const elapsed = currentTime - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          // Easing suave (quadrático)
+          // Easing suave (quadrático ease-in-out)
           const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
           this.currentScroll = startPos * (1 - ease);
-          el.scrollTop = this.currentScroll;
+          this.applyScroll();
 
           if (progress < 1) {
             this.animationFrameId = requestAnimationFrame(anim);
           } else {
             this.currentScroll = 0;
-            el.scrollTop = 0;
+            this.applyScroll();
+            this.isReturningToTop = false;
             if (onComplete) onComplete();
           }
         };
@@ -635,10 +822,10 @@ $currentUser = getCurrentUser();
       }
     }
 
-    // Instâncias de auto-scroll para os cards com listas dinâmicas (velocidade ultra-lenta: 0.08 e pausa de 6s)
-    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
-    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
-    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.08, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    // Instâncias de auto-scroll para os cards com listas dinâmicas (ultra-suave por hardware: 8.5 px/s e pausa de 6s)
+    const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
 
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
     async function carregarDadosEfetivo() {
@@ -744,131 +931,204 @@ $currentUser = getCurrentUser();
           afastadosBadge.textContent = afastados.length;
         }
 
-        if (afastados.length === 0) {
-          listaAfastadosEl.innerHTML = `
-            <div class="h-full flex flex-col items-center justify-center py-6 text-center text-slate-400">
-              <span class="material-symbols-outlined text-emerald-500 text-2xl mb-1">check_circle</span>
-              <p class="text-xs font-bold text-slate-700">Todos em Pronto Emprego</p>
-              <p class="text-[11px] text-slate-400 mt-0.5 font-medium">Nenhum afastamento lançado hoje.</p>
-            </div>
-          `;
-        } else {
-          listaAfastadosEl.innerHTML = afastados.map(m => `
-            <div class="p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between hover:border-slate-300 transition">
-              <div class="min-w-0 pr-2">
-                <div class="text-xs font-bold text-slate-800 truncate leading-tight">${m.nome_formatado}</div>
-                <div class="text-[11px] text-slate-400 font-medium truncate mt-0.5">${formatarNomeSecao(m.secao)}</div>
+        if (listaAfastadosEl) {
+          if (afastados.length === 0) {
+            const emptyAfastadosHtml = `
+              <div class="h-full flex flex-col items-center justify-center py-6 text-center text-slate-400">
+                <span class="material-symbols-outlined text-emerald-500 text-2xl mb-1">check_circle</span>
+                <p class="text-xs font-bold text-slate-700">Todos em Pronto Emprego</p>
+                <p class="text-[11px] text-slate-400 mt-0.5 font-medium">Nenhum afastamento lançado hoje.</p>
               </div>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 border ${m.status_class || 'bg-slate-100 text-slate-700 border-slate-200'}">
-                ${m.status_label}
-              </span>
-            </div>
-          `).join('');
-        }
-        if (typeof autoScrollAfastados !== 'undefined') {
-          autoScrollAfastados.start();
+            `;
+            if (listaAfastadosEl._lastRenderedHtml !== emptyAfastadosHtml) {
+              listaAfastadosEl._lastRenderedHtml = emptyAfastadosHtml;
+              listaAfastadosEl.innerHTML = emptyAfastadosHtml;
+              if (typeof autoScrollAfastados !== 'undefined') autoScrollAfastados.start();
+            }
+          } else {
+            const listAfastadosHtml = afastados.map(m => `
+              <div class="p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between hover:border-slate-300 transition">
+                <div class="min-w-0 pr-2">
+                  <div class="text-xs font-bold text-slate-800 truncate leading-tight">${m.nome_formatado}</div>
+                  <div class="text-[11px] text-slate-400 font-medium truncate mt-0.5">${formatarNomeSecao(m.secao)}</div>
+                </div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 border ${m.status_class || 'bg-slate-100 text-slate-700 border-slate-200'}">
+                  ${m.status_label}
+                </span>
+              </div>
+            `).join('');
+
+            if (listaAfastadosEl._lastRenderedHtml !== listAfastadosHtml) {
+              listaAfastadosEl._lastRenderedHtml = listAfastadosHtml;
+              listaAfastadosEl.innerHTML = listAfastadosHtml;
+              if (typeof autoScrollAfastados !== 'undefined') autoScrollAfastados.start();
+            } else {
+              if (typeof autoScrollAfastados !== 'undefined') autoScrollAfastados.updateBounds();
+            }
+          }
         }
 
-        // 5. Renderiza Prazos Críticos & Entregas (Inspeções de Saúde nos próximos 90 dias / Vencidas)
+        // 5. Renderiza Prazos Críticos & Entregas (Tarefas e Prazos Periódicos + Inspeções de Saúde)
         const prazosCard = document.getElementById('prazos-card-conteudo');
         const prazosBadge = document.getElementById('prazos-total-inspecoes-badge');
-        const alertasInsp = data.alertas_inspecao || [];
+        const listaPrazos = data.prazos_criticos || data.alertas_inspecao || [];
 
         if (prazosBadge) {
-          if (alertasInsp.length === 0) {
+          if (listaPrazos.length === 0) {
             prazosBadge.className = 'text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1';
-            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Nenhuma Insp. Cadastrada`;
+            prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Nenhum Prazo Pendente`;
           } else {
-            const countVencidas = alertasInsp.filter(i => i.dias_restantes < 0).length;
-            const countHoje = alertasInsp.filter(i => i.dias_restantes === 0).length;
-            const countAlerta = alertasInsp.filter(i => i.dias_restantes > 0 && i.dias_restantes <= 60).length;
+            const countVencidas = listaPrazos.filter(i => i.dias_restantes < 0).length;
+            const countHoje = listaPrazos.filter(i => i.dias_restantes === 0).length;
+            const countAlerta = listaPrazos.filter(i => i.dias_restantes > 0 && i.dias_restantes <= 15).length;
+            const totalPrazos = listaPrazos.length;
             
             if (countVencidas > 0) {
               prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
-              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countVencidas} ${countVencidas === 1 ? 'Vencida' : 'Vencidas'})`;
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${totalPrazos} ${totalPrazos === 1 ? 'Prazo' : 'Prazos'} (${countVencidas} ${countVencidas === 1 ? 'Atrasado' : 'Atrasados'})`;
             } else if (countHoje > 0) {
               prazosBadge.className = 'text-xs font-bold text-rose-800 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 flex items-center gap-1.5';
-              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countHoje} Vence Hoje)`;
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span> ${totalPrazos} ${totalPrazos === 1 ? 'Prazo' : 'Prazos'} (${countHoje} Vence Hoje)`;
             } else if (countAlerta > 0) {
               prazosBadge.className = 'text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1.5';
-              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção' : 'Inspeções'} (${countAlerta} a vencer)`;
+              prazosBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> ${totalPrazos} ${totalPrazos === 1 ? 'Prazo' : 'Prazos'} (${countAlerta} a vencer)`;
             } else {
               prazosBadge.className = 'text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5';
-              prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> ${alertasInsp.length} ${alertasInsp.length === 1 ? 'Inspeção em Dia' : 'Inspeções em Dia'}`;
+              prazosBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> ${totalPrazos} ${totalPrazos === 1 ? 'Prazo em Dia' : 'Prazos em Dia'}`;
             }
           }
         }
 
         if (prazosCard) {
-          if (alertasInsp.length === 0) {
-            prazosCard.innerHTML = `
+          if (listaPrazos.length === 0) {
+            const emptyPrazosHtml = `
               <div class="h-full flex flex-col justify-center items-center py-6 px-4 text-center">
                 <div class="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
-                  <span class="material-symbols-outlined text-2xl">health_and_safety</span>
+                  <span class="material-symbols-outlined text-2xl">task_alt</span>
                 </div>
-                <h4 class="text-sm font-bold text-slate-800">Inspeções de Saúde</h4>
+                <h4 class="text-sm font-bold text-slate-800">Tudo em Dia</h4>
                 <p class="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                  Nenhuma data de validade de inspeção de saúde cadastrada no sistema.
+                  Nenhum prazo crítico, tarefa ou inspeção de saúde pendente no momento.
                 </p>
               </div>
             `;
+            if (prazosCard._lastRenderedHtml !== emptyPrazosHtml) {
+              prazosCard._lastRenderedHtml = emptyPrazosHtml;
+              prazosCard.innerHTML = emptyPrazosHtml;
+              autoScrollPrazos.start();
+            }
           } else {
-            prazosCard.innerHTML = alertasInsp.map(item => {
-              const borderBgClass = item.dias_restantes < 0 
-                ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300' 
-                : (item.dias_restantes === 0
-                    ? 'bg-rose-100/60 border-rose-300 hover:border-rose-400'
-                    : (item.dias_restantes <= 30 
-                        ? 'bg-rose-50/30 border-rose-200 hover:border-rose-300' 
-                        : (item.dias_restantes <= 60 
+            const listPrazosHtml = listaPrazos.map(item => {
+              const isOverdue = item.dias_restantes < 0;
+              const isToday = item.dias_restantes === 0;
+              const isUrgent = item.dias_restantes > 0 && (item.dias_restantes <= 3 || item.prioridade === 'critica');
+              const isWarning = item.dias_restantes > 3 && (item.dias_restantes <= 15 || item.prioridade === 'alta');
+              const isNotice = item.dias_restantes > 15 && item.dias_restantes <= 30;
+
+              const borderBgClass = isOverdue
+                ? 'bg-rose-50/50 border-rose-200 hover:border-rose-300' 
+                : (isToday
+                    ? 'bg-rose-100/70 border-rose-300 hover:border-rose-400'
+                    : (isUrgent
+                        ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300' 
+                        : (isWarning
                             ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300' 
-                            : (item.dias_restantes <= 90
+                            : (isNotice
                                 ? 'bg-sky-50/40 border-sky-200 hover:border-sky-300'
                                 : 'bg-slate-50/60 border-slate-200 hover:border-slate-300'))));
 
-              const tagUrgencia = item.dias_restantes < 0
-                ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">VENCIDA</span>`
-                : (item.dias_restantes === 0
-                    ? `<span class="text-xs font-bold text-rose-800 bg-rose-200 px-2 py-0.5 rounded font-mono animate-pulse">VENCE HOJE</span>`
-                    : (item.dias_restantes <= 30
-                        ? `<span class="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-mono">CRÍTICO</span>`
-                        : (item.dias_restantes <= 60
-                            ? `<span class="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono">ATENÇÃO</span>`
-                            : (item.dias_restantes <= 90
-                                ? `<span class="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded font-mono">AVISO</span>`
-                                : `<span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded font-mono">EM DIA</span>`))));
+              const tagUrgencia = isOverdue
+                ? `<span class="text-[10px] font-extrabold text-rose-800 bg-rose-200 border border-rose-300 px-2 py-0.5 rounded font-mono">ATRASADA</span>`
+                : (isToday
+                    ? `<span class="text-[10px] font-extrabold text-rose-900 bg-rose-200 border border-rose-400 px-2 py-0.5 rounded font-mono animate-pulse">VENCE HOJE</span>`
+                    : (isUrgent
+                        ? `<span class="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded font-mono">CRÍTICO</span>`
+                        : (isWarning
+                            ? `<span class="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded font-mono">ATENÇÃO</span>`
+                            : (isNotice
+                                ? `<span class="text-[10px] font-bold text-sky-800 bg-sky-100 border border-sky-200 px-2 py-0.5 rounded font-mono">AVISO</span>`
+                                : `<span class="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded font-mono">NO PRAZO</span>`))));
 
-              const postoWar = (item.posto_grad ? item.posto_grad + ' ' : '') + (item.nome_guerra || item.nome_completo);
+              if (item.tipo_item === 'tarefa_prazo') {
+                const recBadge = item.is_periodica 
+                  ? `<span class="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded flex items-center gap-0.5" title="${item.dia_lembrete || ''}"><span class="material-symbols-outlined text-[11px]">sync</span>${item.periodicidade}</span>` 
+                  : '';
+                
+                const catBadge = `<span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">task_alt</span>${item.categoria || 'TAREFA'}</span>`;
 
-              return `
-                <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
-                  <div class="min-w-0 pr-3">
-                    <div class="flex items-center gap-2 mb-1">
-                      ${tagUrgencia}
-                      <span class="text-xs text-slate-500 font-semibold">${formatarNomeSecao(item.secao) || 'DTCEA-SJ'}</span>
+                const respInfo = item.responsavel 
+                  ? `<span class="text-xs text-slate-500 font-medium">• Resp: <strong class="text-slate-700">${item.responsavel}</strong></span>`
+                  : '';
+
+                return `
+                  <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
+                    <div class="min-w-0 pr-3">
+                      <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                        ${tagUrgencia}
+                        ${catBadge}
+                        ${recBadge}
+                        <span class="text-xs text-slate-500 font-semibold">${formatarNomeSecao(item.secao) || 'DTCEA-SJ'}</span>
+                      </div>
+                      <div class="text-sm font-bold text-slate-900 truncate" title="${item.titulo}">
+                        ${item.titulo}
+                      </div>
+                      <div class="text-xs text-slate-500 mt-0.5 truncate leading-relaxed">
+                        ${item.descricao || 'Entrega periódica / tarefa operacional'} ${respInfo}
+                      </div>
                     </div>
-                    <div class="text-sm font-bold text-slate-900 truncate">
-                      ${postoWar}
-                    </div>
-                    <div class="text-xs text-slate-500 mt-0.5 truncate uppercase tracking-tight" title="${item.nome_completo}">
-                      ${item.nome_completo}
+                    <div class="text-right shrink-0">
+                      <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
+                        <span class="material-symbols-outlined text-sm ${isOverdue ? 'text-rose-600' : (isToday || isUrgent || isWarning ? 'text-amber-600' : 'text-emerald-600')}">calendar_month</span>
+                        <span>${isOverdue ? 'Venceu em' : (isToday ? 'Vence hoje' : 'Vence em')} ${item.data_limite}</span>
+                      </div>
+                      <span class="text-[11px] font-bold ${isOverdue ? 'text-rose-600' : (isToday || isUrgent ? 'text-rose-700' : (isWarning ? 'text-amber-700' : 'text-slate-500'))}">
+                        ${item.urgencia_texto}
+                      </span>
                     </div>
                   </div>
-                  <div class="text-right shrink-0">
-                    <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
-                      <span class="material-symbols-outlined text-sm ${item.dias_restantes < 0 ? 'text-rose-600' : (item.dias_restantes <= 60 ? 'text-amber-600' : 'text-emerald-600')}">event_busy</span>
-                      <span>${item.dias_restantes < 0 ? 'Venceu em' : (item.dias_restantes === 0 ? 'Vence hoje' : 'Vence em')} ${item.validade_insp_saude}</span>
+                `;
+              } else {
+                // Item de Inspeção de Saúde
+                const postoWar = (item.posto_grad ? item.posto_grad + ' ' : '') + (item.nome_guerra || item.nome_completo);
+                const inspBadge = `<span class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">health_and_safety</span>INSP. SAÚDE</span>`;
+
+                return `
+                  <div class="p-3.5 rounded-xl ${borderBgClass} border flex items-center justify-between transition shadow-2xs">
+                    <div class="min-w-0 pr-3">
+                      <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                        ${tagUrgencia}
+                        ${inspBadge}
+                        <span class="text-xs text-slate-500 font-semibold">${formatarNomeSecao(item.secao) || 'DTCEA-SJ'}</span>
+                      </div>
+                      <div class="text-sm font-bold text-slate-900 truncate">
+                        ${postoWar}
+                      </div>
+                      <div class="text-xs text-slate-500 mt-0.5 truncate uppercase tracking-tight" title="${item.nome_completo}">
+                        ${item.nome_completo}
+                      </div>
                     </div>
-                    <span class="text-[11px] font-bold ${item.dias_restantes < 0 ? 'text-rose-600' : (item.dias_restantes <= 60 ? 'text-amber-700' : 'text-slate-500')}">
-                      ${item.urgencia_texto}
-                    </span>
+                    <div class="text-right shrink-0">
+                      <div class="text-xs font-extrabold text-slate-800 font-mono flex items-center justify-end gap-1">
+                        <span class="material-symbols-outlined text-sm ${isOverdue ? 'text-rose-600' : (isToday || isUrgent || isWarning ? 'text-amber-600' : 'text-emerald-600')}">health_and_safety</span>
+                        <span>${isOverdue ? 'Venceu em' : (isToday ? 'Vence hoje' : 'Vence em')} ${item.validade_insp_saude}</span>
+                      </div>
+                      <span class="text-[11px] font-bold ${isOverdue ? 'text-rose-600' : (isToday || isUrgent ? 'text-rose-700' : (isWarning ? 'text-amber-700' : 'text-slate-500'))}">
+                        ${item.urgencia_texto}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              `;
+                `;
+              }
             }).join('');
+
+            if (prazosCard._lastRenderedHtml !== listPrazosHtml) {
+              prazosCard._lastRenderedHtml = listPrazosHtml;
+              prazosCard.innerHTML = listPrazosHtml;
+              autoScrollPrazos.start();
+            } else {
+              autoScrollPrazos.updateBounds();
+            }
           }
-          // Aciona auto-scroll vertical inteligente se o conteúdo exceder a tela
-          autoScrollPrazos.start();
         }
 
       } catch (err) {
@@ -912,7 +1172,7 @@ $currentUser = getCurrentUser();
             totalBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span> ${labelCitacoes}`;
           }
 
-          cardConteudo.innerHTML = data.ocorrencias.map((oc, idx) => `
+          const listBcaHtml = data.ocorrencias.map((oc, idx) => `
             <div class="p-3.5 rounded-xl bg-white border border-amber-200/90 hover:border-amber-400 hover:shadow-xs transition">
               <div class="flex items-center justify-between gap-2 mb-2">
                 <div class="flex items-center gap-1.5 flex-wrap">
@@ -953,13 +1213,21 @@ $currentUser = getCurrentUser();
               </div>
             </div>
           `).join('');
+
+          if (cardConteudo._lastRenderedHtml !== listBcaHtml) {
+            cardConteudo._lastRenderedHtml = listBcaHtml;
+            cardConteudo.innerHTML = listBcaHtml;
+            autoScrollBCA.start();
+          } else {
+            autoScrollBCA.updateBounds();
+          }
         } else if (data.success) {
           if (totalBadge) {
             totalBadge.className = 'text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1';
             totalBadge.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">verified</span> Sem Citações`;
           }
 
-          cardConteudo.innerHTML = `
+          const emptyBcaHtml = `
             <div class="h-full flex flex-col justify-center items-center py-6 px-4 text-center">
               <div class="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 shadow-2xs">
                 <span class="material-symbols-outlined text-2xl">verified_user</span>
@@ -974,19 +1242,28 @@ $currentUser = getCurrentUser();
               </div>
             </div>
           `;
+
+          if (cardConteudo._lastRenderedHtml !== emptyBcaHtml) {
+            cardConteudo._lastRenderedHtml = emptyBcaHtml;
+            cardConteudo.innerHTML = emptyBcaHtml;
+            autoScrollBCA.start();
+          }
         } else {
           if (totalBadge) totalBadge.textContent = 'Indisponível';
-          cardConteudo.innerHTML = `
+          const waitBcaHtml = `
             <div class="py-10 text-center text-slate-400 text-sm">
               <span class="material-symbols-outlined text-3xl text-slate-300 mb-1">newspaper</span>
               <p class="font-bold text-slate-600">Aguardando Boletim</p>
               <p class="text-xs text-slate-400 mt-0.5">${data.message || 'Conectando ao SISBCA (CENDOC)...'}</p>
             </div>
           `;
-        }
 
-        // Aciona auto-scroll vertical inteligente se o conteúdo do BCA exceder a tela
-        autoScrollBCA.start();
+          if (cardConteudo._lastRenderedHtml !== waitBcaHtml) {
+            cardConteudo._lastRenderedHtml = waitBcaHtml;
+            cardConteudo.innerHTML = waitBcaHtml;
+            autoScrollBCA.start();
+          }
+        }
       } catch (err) {
         console.warn('Erro ao carregar citações do BCA:', err);
       }

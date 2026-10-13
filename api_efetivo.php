@@ -421,6 +421,10 @@ try {
                     $alertasInspecao[] = [
                         'tipo_item' => 'inspecao_saude',
                         'id' => (int)$m['id'],
+                        'titulo' => 'Inspeção de Saúde',
+                        'descricao' => 'Validade Periódica de Inspeção de Saúde',
+                        'categoria' => 'Saúde',
+                        'prioridade' => $diffDays < 0 ? 'critica' : ($diffDays <= 30 ? 'alta' : 'media'),
                         'nome_completo' => $m['name'] ?? '',
                         'nome_guerra' => $m['war_name'] ?? '',
                         'posto_grad' => $m['grade'] ?? '',
@@ -431,6 +435,8 @@ try {
                         'secao_original' => $m['secao'] ?? 'DTCEA-SJ',
                         'data_insp_saude' => $dtInspObj ? $dtInspObj->format('d/m/Y') : null,
                         'validade_insp_saude' => $valObj->format('d/m/Y'),
+                        'data_limite' => $valObj->format('d/m/Y'),
+                        'data_limite_iso' => $valObj->format('Y-m-d'),
                         'validade_iso' => $valObj->format('Y-m-d'),
                         'dias_restantes' => $diffDays,
                         'status_tipo' => $statusTipo,
@@ -446,6 +452,115 @@ try {
             });
         } catch (Exception $e) {}
     }
+
+    // 7. Alertas de Tarefas e Prazos Periódicos/Críticos (tabela tarefas_prazos)
+    $alertasTarefas = [];
+    try {
+        $tablesList = $db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+        if (in_array('tarefas_prazos', $tablesList)) {
+            $stmtTarefas = $db->query("
+                SELECT t.*,
+                       COALESCE(s.`$secCol`, 'DTCEA-SJ') as secao_nome,
+                       u_resp.name as resp_name,
+                       u_resp.war_name as resp_war_name,
+                       u_resp.grade as resp_grade
+                FROM tarefas_prazos t
+                LEFT JOIN `$secTable` s ON t.secao_id = s.id
+                LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
+                WHERE t.status IN ('pendente', 'em_andamento')
+                  AND t.data_limite IS NOT NULL
+                ORDER BY (t.data_limite < CURDATE()) DESC, t.data_limite ASC, (t.prioridade = 'critica') DESC
+            ");
+            $tarefasRaw = $stmtTarefas->fetchAll();
+            $hojeObj = new DateTime('today');
+
+            foreach ($tarefasRaw as $t) {
+                $dtPrazo = parseDataValidadeFlex($t['data_limite']);
+                if (!$dtPrazo) continue;
+                $dtPrazo->setTime(0, 0, 0);
+
+                $diffDays = (int)$hojeObj->diff($dtPrazo)->format('%r%a');
+
+                $respFormatado = '';
+                if (!empty($t['resp_name']) || !empty($t['resp_war_name'])) {
+                    $respFormatado = formatarNomeMilitar([
+                        'grade' => $t['resp_grade'] ?? '',
+                        'name' => $t['resp_name'] ?? '',
+                        'war_name' => $t['resp_war_name'] ?? ''
+                    ]);
+                }
+
+                if ($diffDays < 0) {
+                    $statusTipo = 'vencida';
+                    $diasVenc = abs($diffDays);
+                    $statusClass = 'bg-rose-50/60 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = $diasVenc === 1 ? "Atrasada há 1 dia" : "Atrasada há {$diasVenc} dias";
+                } elseif ($diffDays === 0) {
+                    $statusTipo = 'hoje';
+                    $statusClass = 'bg-rose-100/70 border-rose-300';
+                    $urgenciaBadgeClass = 'bg-rose-600 text-white border-rose-700 animate-pulse';
+                    $urgenciaTexto = "Vence Hoje!";
+                } elseif ($diffDays <= 3) {
+                    $statusTipo = 'critico';
+                    $statusClass = 'bg-rose-50/50 border-rose-200';
+                    $urgenciaBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } elseif ($diffDays <= 7) {
+                    $statusTipo = 'alerta';
+                    $statusClass = 'bg-amber-50/50 border-amber-200';
+                    $urgenciaBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } elseif ($diffDays <= 30) {
+                    $statusTipo = 'aviso';
+                    $statusClass = 'bg-sky-50 border-sky-200';
+                    $urgenciaBadgeClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                } else {
+                    $statusTipo = 'normal';
+                    $statusClass = 'bg-slate-50 border-slate-200';
+                    $urgenciaBadgeClass = 'bg-slate-100 text-slate-800 border-slate-200';
+                    $urgenciaTexto = "Vence em {$diffDays}d";
+                }
+
+                $alertasTarefas[] = [
+                    'tipo_item' => 'tarefa_prazo',
+                    'id' => (int)$t['id'],
+                    'titulo' => $t['titulo'],
+                    'descricao' => $t['descricao'] ?? '',
+                    'categoria' => $t['categoria'] ?? 'Geral',
+                    'prioridade' => $t['prioridade'] ?? 'media',
+                    'status' => $t['status'] ?? 'pendente',
+                    'is_periodica' => (bool)$t['is_periodica'],
+                    'periodicidade' => $t['periodicidade'] ?? 'nenhuma',
+                    'dia_lembrete' => $t['dia_lembrete'] ?? '',
+                    'lembrete_antecedencia_dias' => (int)($t['lembrete_antecedencia_dias'] ?? 3),
+                    'secao' => abreviarNomeSecao($t['secao_nome'] ?? 'DTCEA-SJ'),
+                    'secao_original' => $t['secao_nome'] ?? 'DTCEA-SJ',
+                    'responsavel' => $respFormatado,
+                    'data_limite' => $dtPrazo->format('d/m/Y'),
+                    'data_limite_iso' => $dtPrazo->format('Y-m-d'),
+                    'hora_limite' => !empty($t['hora_limite']) ? substr($t['hora_limite'], 0, 5) : null,
+                    'dias_restantes' => $diffDays,
+                    'status_tipo' => $statusTipo,
+                    'status_class' => $statusClass,
+                    'urgencia_badge_class' => $urgenciaBadgeClass,
+                    'urgencia_texto' => $urgenciaTexto
+                ];
+            }
+        }
+    } catch (Exception $e) {}
+
+    // Combina todos os prazos críticos (Tarefas + Inspeções) ordenados por urgência
+    $todosPrazosCriticos = array_merge($alertasInspecao, $alertasTarefas);
+    usort($todosPrazosCriticos, function($a, $b) {
+        if ($a['dias_restantes'] === $b['dias_restantes']) {
+            $prioA = ($a['tipo_item'] === 'tarefa_prazo' && ($a['prioridade'] === 'critica' || $a['prioridade'] === 'alta')) ? 1 : 0;
+            $prioB = ($b['tipo_item'] === 'tarefa_prazo' && ($b['prioridade'] === 'critica' || $b['prioridade'] === 'alta')) ? 1 : 0;
+            return $prioB <=> $prioA;
+        }
+        return $a['dias_restantes'] <=> $b['dias_restantes'];
+    });
 
     $responsePayload = [
         'success' => true,
@@ -463,12 +578,16 @@ try {
             'total_respondido' => $totalRespondido,
             'taxa_presenca' => $taxaPresenca,
             'taxa_prontidao_total' => $taxaProntidaoTotal,
-            'total_inspecoes_alerta' => count($alertasInspecao)
+            'total_inspecoes_alerta' => count($alertasInspecao),
+            'total_tarefas_alerta' => count($alertasTarefas),
+            'total_prazos_criticos' => count($todosPrazosCriticos)
         ],
         'secoes' => $secoes,
         'militares_afastados' => $militaresAfastados,
         'efetivo_detalhado' => $efetivoDetalhado,
-        'alertas_inspecao' => $alertasInspecao
+        'alertas_inspecao' => $alertasInspecao,
+        'alertas_tarefas' => $alertasTarefas,
+        'prazos_criticos' => $todosPrazosCriticos
     ];
 
     if (isset($_GET['debug'])) {
