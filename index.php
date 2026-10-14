@@ -61,7 +61,10 @@ $currentUser = getCurrentUser();
     .animate-marquee-smooth {
       display: inline-flex;
       white-space: nowrap;
-      animation: marquee 1500s linear infinite;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+      backface-visibility: hidden;
+      animation: marquee 950s linear infinite;
     }
 
     .animate-marquee-smooth:hover {
@@ -503,6 +506,8 @@ $currentUser = getCurrentUser();
           track.className = 'auto-scroll-track';
           track.style.willChange = 'transform';
           track.style.transform = 'translate3d(0, 0, 0)';
+          track.style.backfaceVisibility = 'hidden';
+          track.style.perspective = '1000px';
           track.style.transition = 'none';
           track.style.width = '100%';
 
@@ -577,14 +582,14 @@ $currentUser = getCurrentUser();
 
         if (thumb) {
           thumb.style.height = `${thumbHeight}px`;
-          thumb.style.transform = `translate3d(0, ${thumbTop.toFixed(2)}px, 0)`;
+          thumb.style.transform = `translate3d(0, ${thumbTop.toFixed(3)}px, 0)`;
         }
       }
 
       applyScroll() {
         const track = this.getTrack();
         if (!track) return;
-        track.style.transform = `translate3d(0, -${this.currentScroll.toFixed(2)}px, 0)`;
+        track.style.transform = `translate3d(0, -${this.currentScroll.toFixed(3)}px, 0)`;
         this.updateScrollbar();
       }
 
@@ -789,8 +794,8 @@ $currentUser = getCurrentUser();
         this.isReturningToTop = true;
 
         const startPos = this.currentScroll;
-        // Duração suave entre 1.2s e 2.0s
-        const duration = Math.min(2000, Math.max(1200, startPos * 2.2));
+        // Duração suave e progressiva (1.5s a 2.5s)
+        const duration = Math.min(2500, Math.max(1500, startPos * 2.6));
         const startTime = performance.now();
 
         const anim = (currentTime) => {
@@ -802,8 +807,10 @@ $currentUser = getCurrentUser();
 
           const elapsed = currentTime - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          // Easing suave (quadrático ease-in-out)
-          const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          // Easing cúbico ultra-suave (easeInOutCubic)
+          const ease = progress < 0.5 
+            ? 4 * progress * progress * progress 
+            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
           this.currentScroll = startPos * (1 - ease);
           this.applyScroll();
@@ -822,9 +829,10 @@ $currentUser = getCurrentUser();
       }
     }
 
-    // Instâncias de auto-scroll para os cards com listas dinâmicas (ultra-suave por hardware: 8.5 px/s e pausa de 6s)
+    // Instâncias de auto-scroll para os cards com listas dinâmicas
     const autoScrollBCA = new CardAutoScrollManager('bca-card-conteudo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
-    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
+    // Prazos Críticos: rolagem ainda mais suave, lenta e confortável (5.5 px/s com pausas de 7.5s no topo e 7s no rodapé)
+    const autoScrollPrazos = new CardAutoScrollManager('prazos-card-conteudo', { speed: 0.05, pixelsPerSecond: 5.5, pauseTopMs: 7500, pauseBottomMs: 7000 });
     const autoScrollAfastados = new CardAutoScrollManager('lista-afastados-corpo', { speed: 0.08, pixelsPerSecond: 8.5, pauseTopMs: 6000, pauseBottomMs: 6000 });
 
     // 2. Função de Sincronização em Tempo Real com CTR_EFETIVO
