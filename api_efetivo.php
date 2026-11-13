@@ -249,6 +249,12 @@ try {
 
     $secoes = [];
     foreach ($secoesRaw as $s) {
+        $nomeSecaoUpper = mb_strtoupper(trim($s['secao'] ?? ''), 'UTF-8');
+        // Exclui a seção "COMANDO" da listagem de seções por ser informação confidencial
+        if ($nomeSecaoUpper === 'COMANDO') {
+            continue;
+        }
+
         $tot = (int)$s['total_secao'];
         $pres = (int)$s['presentes_secao'];
         $perc = $tot > 0 ? round(($pres / $tot) * 100) : 0;

@@ -886,7 +886,12 @@ $currentUser = getCurrentUser();
         }
 
         // 3. Renderiza Tabela de Seções
-        const secoes = data.secoes || [];
+        const rawSecoes = data.secoes || [];
+        // Filtra a seção "COMANDO" por ser confidencial
+        const secoes = rawSecoes.filter(s => {
+          const nome = (s.secao || s.secao_original || '').toString().trim().toUpperCase();
+          return nome !== 'COMANDO';
+        });
         const secoesTbody = document.getElementById('tabela-secoes-corpo');
         const secoesBadge = document.getElementById('secoes-count-badge');
 
